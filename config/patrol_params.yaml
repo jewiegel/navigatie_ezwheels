@@ -2,14 +2,14 @@
 patrol_node:
   ros__parameters:
     # Blokkade-afhandeling
-    wait_seconds: 120.0          # wachten op vrije doorgang
+    wait_seconds: 5.0          # wachten op vrije doorgang
     backup_speed: 0.1            # m/s achteruit
     backup_distance: 0.5         # m achteruit na de wachttijd
     renav_pause: 2.0             # s pauze tussen oud doel annuleren en nieuw doel
 
     # Navigatie
-    nav_timeout_sec: 60.0        # per waypoint zonder voortgang → blokkade
-    return_timeout_sec: 120.0    # terugkeren duurt langer → fout
+    nav_timeout_sec: 30.0        # per waypoint zonder voortgang → blokkade
+    return_timeout_sec: 90.0    # terugkeren duurt langer → fout
     server_timeout_sec: 5.0
     goal_retry_delay: 4.0
     max_goal_retries: 1
@@ -22,7 +22,7 @@ patrol_node:
     # EZ-Wheel veiligheidsstop-detectie
     safety_monitor_enabled: false   # tijdelijk uit voor debugging
     safety_still_seconds: 15.0
-    person_wait_seconds: 120.0
+    person_wait_seconds: 5.0
 
     cmd_vel_topic: /cmd_vel
     routes_file: ''              # leeg = config/patrol_routes.yaml uit dit pakket

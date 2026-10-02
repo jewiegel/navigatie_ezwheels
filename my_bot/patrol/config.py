@@ -22,9 +22,8 @@ class Route:
 
 DEFAULT_ROUTES = [
     Route(1, '/start_patrol', [
-        (7.66, -3.49, 0.0),
-        (5.48, -0.6, 0.0),
-        (7.0, 2.9, 0.0),
+        (3.1859422942077407, 0.21455550145977087, 0.0),
+        (0.346053203926163, 0.1555398774080503, 0.0)
     ]),
     Route(2, '/start_patrol2', [
         (7.0, 2.9, 0.0),
@@ -38,7 +37,7 @@ DEFAULT_ROUTES = [
 @dataclass
 class PatrolConfig:
     # Blokkade-afhandeling
-    wait_seconds: float = 120.0            # wachten op vrije doorgang bij blokkade
+    wait_seconds: float = 5.0            # wachten op vrije doorgang bij blokkade
     backup_speed: float = 0.1              # m/s achteruit
     backup_distance: float = 0.5           # m achteruit na de wachttijd
     renav_pause: float = 2.0               # s pauze tussen oud doel annuleren en nieuw doel

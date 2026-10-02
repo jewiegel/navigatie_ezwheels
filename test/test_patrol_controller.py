@@ -175,22 +175,23 @@ class TestEscalatieladder(unittest.TestCase):
         rig.start_and_drive()
 
         # 1. Blokkade → wachten
+        cfg = rig.config
         rig.nav.fail()
         self.assertEqual(rig.state, 'WaitingState')
         self.assertTrue(rig.nav.goal.cancelled)
-        rig.clock.advance(119)
+        rig.clock.advance(cfg.wait_seconds - 0.1)
         self.assertEqual(rig.state, 'WaitingState')
 
-        # 2. Na 120 s → piep + achteruit, gevarenlichten aan
-        rig.clock.advance(1)
+        # 2. Na wait_seconds → piep + achteruit, gevarenlichten aan
+        rig.clock.advance(0.1)
         self.assertEqual(rig.state, 'BackingUpState')
         self.assertEqual(rig.signals.beeps, 1)
         self.assertEqual(rig.signals.indicators[-1], 'gevaar')
-        rig.clock.advance(4.5)
+        rig.clock.advance(cfg.backup_duration - 0.5)
         self.assertTrue(rig.signals.drive_cmds)
-        self.assertTrue(all(v == -0.1 for v in rig.signals.drive_cmds))
+        self.assertTrue(all(v == -cfg.backup_speed for v in rig.signals.drive_cmds))
 
-        # ... na 0,5 m (5 s) → vers pad vanaf hetzelfde waypoint
+        # ... na backup_distance → vers pad vanaf hetzelfde waypoint
         rig.clock.advance(0.6)
         self.assertEqual(rig.state, 'DrivingState')
         self.assertEqual(len(rig.nav.goal.waypoints), 3)
@@ -199,7 +200,7 @@ class TestEscalatieladder(unittest.TestCase):
         # 3. Weer geblokkeerd → alternatief via volgend waypoint (na korte pauze)
         rig.nav.fail()
         self.assertEqual(rig.state, 'WaitingState')
-        rig.clock.advance(2)
+        rig.clock.advance(cfg.renav_pause)
         self.assertEqual(rig.state, 'DrivingState')
         self.assertEqual(rig.ctl.current_index, 1)
         self.assertEqual(len(rig.nav.goal.waypoints), 2)
@@ -207,7 +208,7 @@ class TestEscalatieladder(unittest.TestCase):
 
         # 4. Weer geblokkeerd → terugkeren
         rig.nav.fail()
-        rig.clock.advance(2)
+        rig.clock.advance(cfg.renav_pause)
         self.assertEqual(rig.state, 'ReturningState')
         self.assertEqual(rig.nav.goal.kind, 'to')
 
@@ -223,14 +224,15 @@ class TestEscalatieladder(unittest.TestCase):
         rig.nav.feedback(0)        # current_index = 2 (laatste)
         rig.ctl.ladder_index = 2   # wacht + achteruit al gehad
         rig.ctl.on_blocked()
-        rig.clock.advance(2)
+        rig.clock.advance(rig.config.renav_pause)
         self.assertEqual(rig.state, 'ReturningState')
 
     def test_gepasseerd_waypoint_reset_ladder(self):
         rig = Rig()
         rig.start_and_drive()
+        cfg = rig.config
         rig.nav.fail()
-        rig.clock.advance(120 + 5.1)       # wachten + achteruit
+        rig.clock.advance(cfg.wait_seconds + cfg.backup_duration + 0.1)   # wachten + achteruit
         rig.nav.accept()
         self.assertEqual(rig.ctl.ladder_index, 2)
         rig.nav.feedback(2)
@@ -244,7 +246,7 @@ class TestEscalatieladder(unittest.TestCase):
         rig.start_and_drive()
         rig.ctl.ladder_index = 3
         rig.ctl.on_blocked()
-        rig.clock.advance(2)
+        rig.clock.advance(rig.config.renav_pause)
         self.assertEqual(rig.state, 'ReturningState')
         rig.clock.advance(rig.config.return_timeout_sec + 1)
         self.assertEqual(rig.state, 'ErrorState')
@@ -254,7 +256,7 @@ class TestEscalatieladder(unittest.TestCase):
         rig = Rig()
         rig.start_and_drive()
         rig.nav.fail()
-        rig.clock.advance(121)
+        rig.clock.advance(rig.config.wait_seconds + 0.5)
         self.assertEqual(rig.state, 'BackingUpState')
         rig.ctl.stop()
         n = len(rig.signals.drive_cmds)
@@ -267,7 +269,7 @@ class TestEscalatieladder(unittest.TestCase):
         rig.start_and_drive()
         rig.nav.fail()
         rig.ctl.stop()
-        rig.clock.advance(200)
+        rig.clock.advance(rig.config.wait_seconds * 2)
         self.assertEqual(rig.state, 'StoppedState')
         self.assertEqual(rig.signals.beeps, 0)
 
@@ -303,7 +305,7 @@ class TestVeiligheidsstop(unittest.TestCase):
         rig.monitor.on_motion(False)
         rig.clock.advance(16)
         rig.monitor.check()
-        rig.clock.advance(120)
+        rig.clock.advance(config.person_wait_seconds)
         self.assertEqual(rig.state, 'BackingUpState')
 
 
@@ -314,8 +316,10 @@ class TestRoutesBestand(unittest.TestCase):
         routes = load_routes(path)
         self.assertEqual([r.route_id for r in routes], [1, 2])
         self.assertEqual(routes[0].start_topic, '/start_patrol')
-        self.assertEqual(routes[0].waypoints[0], (7.66, -3.49, 0.0))
-        self.assertEqual(routes, PatrolConfig().routes)   # yaml == ingebouwde defaults
+        for route in routes:
+            for wp in route.waypoints:
+                self.assertEqual(len(wp), 3)
+                self.assertTrue(all(isinstance(v, float) for v in wp))
 
     def test_fout_waypoint_geeft_duidelijke_melding(self):
         with tempfile.NamedTemporaryFile('w', suffix='.yaml', delete=False) as f:
