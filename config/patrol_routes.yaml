@@ -1,0 +1,21 @@
+# Patrouilleroutes voor patrol_node.
+# Elke route wordt gestart door een Bool (true) op zijn start_topic.
+# Waypoints: [x, y, yaw]  — meter / radialen in het map-frame.
+# Een route toevoegen = hier een blok bijzetten; geen code- of buildwijziging
+# nodig behalve 'colcon build' (dit bestand wordt naar share/my_bot gekopieerd).
+
+routes:
+  - id: 1
+    start_topic: /start_patrol        # HMI-knop 1
+    waypoints:
+      - [7.66, -3.49, 0.0]
+      - [5.48, -0.6, 0.0]
+      - [7.0, 2.9, 0.0]
+
+  - id: 2
+    start_topic: /start_patrol2       # HMI-knop 2 — PLACEHOLDER: pas de waypoints aan
+    waypoints:
+      - [7.0, 2.9, 0.0]
+      - [5.48, -0.6, 0.0]
+      - [7.66, -3.49, 0.0]
+      - [7.99, 3.32, 0.0]

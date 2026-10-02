@@ -1,15 +1,21 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import Shutdown
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    pkg = get_package_share_directory('my_bot')
+
     return LaunchDescription([
 
         Node(
             package='my_bot',
             executable='patrol_node.py',
             name='patrol_node',
+            parameters=[os.path.join(pkg, 'config', 'patrol_params.yaml')],
             output='screen',
             on_exit=Shutdown(),
         ),
