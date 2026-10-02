@@ -14,6 +14,9 @@ from lifecycle_msgs.srv import ChangeState
 from lifecycle_msgs.msg import Transition
 import math
 
+from navigation_states import (
+    IdleState, DrivingState, WaitingState, CompletedState, StoppedState, ErrorState)
+
 WACHT_SECONDEN  = 120  # 2 minuten wachten bij blokkade
 NAV_TIMEOUT_SEC = 60   # seconden per waypoint zonder voortgang → fout
 PERSOON_WACHT_SECONDEN = 120
@@ -23,21 +26,17 @@ BACKUP_CMD_VEL_TOPIC = '/cmd_vel'
 RENAV_PAUSE     = 2.0   # s — pauze tussen oud doel annuleren en nieuw doel sturen
 
 
-class State:
-    IDLE      = "idle"
-    DRIVING   = "rijdend"
-    WAITING   = "wachten"
-    COMPLETED = "voltooid"
-    STOPPED   = "gestopt"
-    ERROR     = "fout"
-
-
 class PatrolNode(Node):
+    """NavigationContext: houdt de actieve NavigationState vast."""
 
     def __init__(self):
         super().__init__('patrol_node')
 
-        self._state = State.IDLE
+        self._states = {cls: cls(self) for cls in (
+            IdleState, DrivingState, WaitingState,
+            CompletedState, StoppedState, ErrorState)}
+        self._state = self._states[IdleState]
+        self._nav_timeout_sec = NAV_TIMEOUT_SEC   # gebruikt door DrivingState.on_tick
 
         # Hoofdnavigatie: NavigateThroughPoses (alle waypoints in één goal).
         self._action_client = ActionClient(
@@ -109,7 +108,7 @@ class PatrolNode(Node):
         # Veiligheidsfunctionaliteit tijdelijk uitgeschakeld voor debugging
         # self.create_subscription(Odometry, '/odom', self._on_odom_safety, 10)
         # self.create_timer(0.5, self._check_safety_stop)
-        self.create_timer(5.0, self._check_nav_timeout)
+        self.create_timer(5.0, self._on_tick)   # o.a. nav-timeout in DrivingState
 
         self._publish_state()
         self.get_logger().info('PatrolNode klaar — wacht op /start_patrol')
@@ -121,24 +120,20 @@ class PatrolNode(Node):
 
     # ── State machine ─────────────────────────────────────────────────────────
 
-    def _set_state(self, new_state: str):
-        old_state            = self._state
-        self._state          = new_state
-        self._safety_stopped = False
+    def _set_state(self, state_cls):
+        old_state = self._state
+        old_state.on_leave()
+        self._state             = self._states[state_cls]
+        self._safety_stopped    = False
         self._cmdvel_zero_since = None
-        self._was_moving     = False
-        self._driving_since  = self.get_clock().now() if new_state == State.DRIVING else None
+        self._was_moving        = False
         self._publish_state()
-        self.get_logger().info(f'[STATE] {old_state} → {new_state}')
+        self.get_logger().info(f'[STATE] {old_state.name} → {self._state.name}')
+        self._state.on_enter()
 
     def _publish_state(self):
-        published = (
-            State.WAITING
-            if self._safety_stopped and self._state == State.DRIVING
-            else self._state
-        )
         msg = String()
-        msg.data = published
+        msg.data = self._state.published_name()
         self._state_pub.publish(msg)
 
     # ── Start / stop ──────────────────────────────────────────────────────────
@@ -152,9 +147,8 @@ class PatrolNode(Node):
             self._begin_route(2, self._route2)
 
     def _begin_route(self, route_id: int, waypoints):
-        valid_start_states = (State.IDLE, State.COMPLETED, State.STOPPED, State.ERROR)
-        if self._state not in valid_start_states:
-            self.get_logger().warn(f'Start genegeerd — robot is momenteel: {self._state}')
+        if not self._state.can_start():
+            self.get_logger().warn(f'Start genegeerd — robot is momenteel: {self._state.name}')
             return
         # Kies de route en start altijd vanaf het begin (geen voortgang onthouden).
         self._waypoints = waypoints
@@ -252,12 +246,10 @@ class PatrolNode(Node):
         self._return_to_last()
 
     def _on_stop(self, msg: Bool):
-        if msg.data and self._state not in (State.IDLE, State.STOPPED, State.COMPLETED, State.ERROR):
+        if msg.data and self._state.can_stop():
             self.get_logger().info('Stopsignaal ontvangen — route wordt onderbroken')
             self._stopped = True
-            self._reset_timers_and_flags()
-            self._set_state(State.STOPPED)
-            self._cancel_goal()
+            self._set_state(StoppedState)   # on_enter: timers opruimen + doel annuleren
 
     def _cancel_goal(self):
         """Annuleer het actieve doel en hoog het volgnummer op, zodat een laat
@@ -294,7 +286,7 @@ class PatrolNode(Node):
         if not self._action_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error(
                 'Nav2 navigate_through_poses niet beschikbaar na 5 seconden')
-            self._set_state(State.ERROR)
+            self._set_state(ErrorState)
             return
 
         remaining_poses = self._waypoints[self._current_index:]
@@ -313,7 +305,7 @@ class PatrolNode(Node):
         self.get_logger().info(
             f'Stuur {label}: {len(remaining_poses)} waypoints '
             f'(waypoint {self._current_index + 1} t/m {len(self._waypoints)})')
-        self._set_state(State.DRIVING)
+        self._set_state(DrivingState)
         self._set_indicator('uit')   # eventuele gevaarslichten uit nu we weer rijden
         future = self._action_client.send_goal_async(
             goal, feedback_callback=self._on_feedback)
@@ -361,30 +353,13 @@ class PatrolNode(Node):
         result_future.add_done_callback(lambda f: self._on_result(f, seq))
 
     def _on_result(self, future, seq):
-        # Negeer resultaten van oude doelen, of als we gestopt/achteruit/fout/wachten zijn.
-        # (Bij het ingaan van 'wachten' annuleren we het doel; dat CANCELED-resultaat
-        #  mag de blokkade-afhandeling niet opnieuw triggeren.)
-        if seq != self._goal_seq:
+        # Negeer resultaten van oude doelen of als we gestopt zijn. De rest beslist
+        # de toestand zelf: alleen DrivingState handelt het resultaat af (bij het
+        # ingaan van 'wachten' annuleren we het doel; dat CANCELED-resultaat mag de
+        # blokkade-afhandeling niet opnieuw triggeren).
+        if seq != self._goal_seq or self._stopped:
             return
-        if self._stopped or self._backing_up or self._state in (State.ERROR, State.WAITING):
-            return
-
-        status = future.result().status
-
-        if status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info('Volledige route voltooid — robot stopt, gevarenlichten aan.')
-            self._last_successful_idx = len(self._waypoints) - 1
-            self._trying_alternative  = False
-            self._blockage_level      = 0
-            # Geen herstart: naar 'voltooid', stilstaan en gevarenlichten aan.
-            self._set_state(State.COMPLETED)
-            self._cmdvel_pub.publish(Twist())   # zeker stilstaan
-            self._set_indicator('gevaar')        # gevarenlichten aan (indicator_node blijft knipperen)
-        else:
-            self.get_logger().warn(
-                f'Nav2 route mislukt — status: {status} '
-                f'(4=SUCCEEDED, 5=CANCELED, 6=ABORTED)')
-            self._on_blocked()
+        self._state.on_nav_result(future.result().status)
 
     # ── Blokkade afhandeling ──────────────────────────────────────────────────
 
@@ -395,7 +370,7 @@ class PatrolNode(Node):
             self.get_logger().warn(
                 f'Blokkade bij waypoint {self._current_index + 1} — '
                 f'wacht {WACHT_SECONDEN // 60} min op vrije doorgang')
-            self._set_state(State.WAITING)
+            self._set_state(WaitingState)
             self._cancel_goal()   # doel annuleren → robot stopt en staat echt stil tijdens het wachten
             self._wait_timer = self.create_timer(WACHT_SECONDEN, self._on_wacht_voorbij)
         else:
@@ -428,17 +403,17 @@ class PatrolNode(Node):
                 self._trying_alternative = True
                 self._current_index      = next_index
                 self._cancel_goal()       # oud pad uitzetten (hoogt _goal_seq op)
-                self._halt()              # robot stilzetten tijdens de pauze
+                self._set_state(WaitingState)   # robot stilzetten tijdens de pauze
                 self._schedule_start_navigation(delay=RENAV_PAUSE)  # daarna vers pad
             else:
                 self.get_logger().warn('Geen alternatief — terugkeren naar vorig waypoint')
                 self._cancel_goal()
-                self._halt()
+                self._set_state(WaitingState)
                 self._schedule_return(delay=RENAV_PAUSE)
         else:
             self.get_logger().warn('Alternatieve route ook geblokkeerd — terugkeren')
             self._cancel_goal()
-            self._halt()
+            self._set_state(WaitingState)
             self._schedule_return(delay=RENAV_PAUSE)
 
     def _beep(self):
@@ -464,12 +439,6 @@ class PatrolNode(Node):
         msg.data = state
         self._indicator_pub.publish(msg)
 
-    def _halt(self):
-        """Zet de robot stil tijdens een herplan-pauze: state op WAITING + één
-        nul-snelheid commando, zodat hij óók bij alternatief/terugkeren echt stilstaat."""
-        self._set_state(State.WAITING)
-        self._cmdvel_pub.publish(Twist())
-
     def _reset_timers_and_flags(self):
         """Schone lei bij start/stop: alle lopende timers stoppen, vlaggen resetten
         en de wielen stilzetten. Voorkomt dat een oude run of een achteruit-actie
@@ -492,7 +461,7 @@ class PatrolNode(Node):
     def _return_to_last(self):
         if not self._return_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error('Nav2 navigate_to_pose niet beschikbaar — kan niet terugkeren')
-            self._set_state(State.ERROR)
+            self._set_state(ErrorState)
             return
 
         goal = NavigateToPose.Goal()
@@ -504,7 +473,7 @@ class PatrolNode(Node):
 
         self.get_logger().info(
             f'Terugkeren naar waypoint {self._last_successful_idx + 1}')
-        self._set_state(State.DRIVING)
+        self._set_state(DrivingState)
         future = self._return_client.send_goal_async(goal)
         future.add_done_callback(lambda f: self._on_return_response(f, seq))
 
@@ -515,7 +484,7 @@ class PatrolNode(Node):
         if not goal_handle.accepted:
             self.get_logger().error(
                 'FOUT: Kan niet terugkeren — operator ingrijpen vereist')
-            self._set_state(State.ERROR)
+            self._set_state(ErrorState)
             return
         self._goal_handle = goal_handle
         result_future = goal_handle.get_result_async()
@@ -530,7 +499,7 @@ class PatrolNode(Node):
         else:
             self.get_logger().error(
                 'FOUT: Route mislukt — kon ook niet terugkeren — operator ingrijpen vereist')
-        self._set_state(State.ERROR)
+        self._set_state(ErrorState)
 
     # ── EZ-Wheel veiligheidsstop monitoring ───────────────────────────────────
 
@@ -554,7 +523,7 @@ class PatrolNode(Node):
                 self.get_logger().info('EZ-Wheel veiligheidsstop opgeheven — robot rijdt verder')
 
     def _check_safety_stop(self):
-        if self._state != State.DRIVING or self._safety_stopped:
+        if not isinstance(self._state, DrivingState) or self._safety_stopped:
             return
         if self._cmdvel_zero_since is None:
             return
@@ -568,20 +537,8 @@ class PatrolNode(Node):
                 self._safety_wait_timer = self.create_timer(
                     PERSOON_WACHT_SECONDEN, self._on_person_wait_voorbij)
 
-    def _check_nav_timeout(self):
-        """Per-waypoint timeout: _driving_since wordt gereset via _on_feedback
-        telkens als een waypoint gepasseerd wordt."""
-        if self._backing_up:
-            return
-        if self._state != State.DRIVING or self._driving_since is None:
-            return
-        elapsed = (self.get_clock().now() - self._driving_since).nanoseconds / 1e9
-        if elapsed > NAV_TIMEOUT_SEC:
-            self.get_logger().error(
-                f'Nav2 timeout na {NAV_TIMEOUT_SEC}s — geen voortgang bij '
-                f'waypoint {self._current_index + 1}')
-            self._driving_since = None
-            self._on_blocked()
+    def _on_tick(self):
+        self._state.on_tick()
 
     # ── Achteruit rijden ──────────────────────────────────────────────────────
 

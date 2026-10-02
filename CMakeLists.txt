@@ -46,4 +46,11 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# State-pattern klassen van patrol_node (import: from navigation_states import ...)
+install(
+  DIRECTORY my_bot/navigation_states
+  DESTINATION lib/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
+)
+
 ament_package()
