@@ -15,7 +15,7 @@ slam_toolbox:
     base_frame: base_footprint
     scan_topic: /scan
     use_map_saver: true # Enable map saving functionality
-    mode: localization #localization of mapping
+    mode: mapping #localization of mapping
 
     map_file_name: /home/linuxkoenp/ros2_ws/ziekenhuisV1 # Verwijzing naar gemaakte kaart
     map_start_pose: [0.0, 0.0, 0.0] # Startpositie van de robot op de kaart (x, y, rotatie)
