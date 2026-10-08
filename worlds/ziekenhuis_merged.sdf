@@ -238,7 +238,7 @@
         </collision>
       </link>
       <link name="wall_5">
-        <pose>-4.46258 1.78849 0.5 0 -0 0</pose>
+        <pose>-14.46258 1.78849 0.5 0 -0 0</pose>
         <visual name="visual_5">
           <geometry>
             <box>

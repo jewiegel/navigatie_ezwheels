@@ -46,4 +46,11 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Patrouille-logica van patrol_node (import: from patrol import ...)
+install(
+  DIRECTORY my_bot/patrol
+  DESTINATION lib/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
+)
+
 ament_package()

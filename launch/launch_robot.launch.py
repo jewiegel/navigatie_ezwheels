@@ -80,6 +80,7 @@ def generate_launch_description():
         package='my_bot',
         executable='patrol_node.py',
         name='patrol_node',
+        parameters=[os.path.join(pkg, 'config', 'patrol_params.yaml')],
         output='screen',
     )
 
