@@ -37,8 +37,8 @@ slam_toolbox:
     # General Parameters
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1  
@@ -65,7 +65,7 @@ slam_toolbox:
     angle_variance_penalty: 1.0    
 
     fine_search_angle_offset: 0.00349     
-    coarse_search_angle_offset: 0.349   
+    coarse_search_angle_offset: 0.524   # ±30°
     coarse_angle_resolution: 0.0349        
     minimum_angle_penalty: 0.9
     minimum_distance_penalty: 0.5
