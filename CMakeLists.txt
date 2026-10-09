@@ -43,6 +43,8 @@ install(PROGRAMS
   my_bot/environment_speed_node.py
   my_bot/mqtt_hmi_bridge.py
   my_bot/test_indicators.py
+  my_bot/circle_driving_node.py
+  my_bot/distance_tracker_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
