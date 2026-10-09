@@ -23,8 +23,8 @@ class CircleDrivingNode(Node):
 
         # Parameters — aan te passen met -p naam:=waarde
         # 0.3 m/s / 0.4 rad/s = straal 0.75 m: past ruim in de testruimte van 3x3 m
-        self.declare_parameter('linear_speed', 0.3)     # m/s vooruit
-        self.declare_parameter('angular_speed', 0.4)    # rad/s; positief = linksom, negatief = rechtsom
+        self.declare_parameter('linear_speed', 0.25)     # m/s vooruit
+        self.declare_parameter('angular_speed', 0.5)    # rad/s; positief = linksom, negatief = rechtsom
         self.declare_parameter('autostart', False)      # true = meteen rijden, zonder start-topic
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('rate', 10.0)            # Hz waarmee het commando herhaald wordt
