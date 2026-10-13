@@ -43,6 +43,7 @@ install(PROGRAMS
   my_bot/environment_speed_node.py
   my_bot/mqtt_hmi_bridge.py
   my_bot/test_indicators.py
+  my_bot/nav2_test_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -51,6 +52,11 @@ install(
   DIRECTORY my_bot/patrol
   DESTINATION lib/${PROJECT_NAME}
   PATTERN "__pycache__" EXCLUDE
+)
+
+install(
+  DIRECTORY behavior_trees 
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()
