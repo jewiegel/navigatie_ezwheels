@@ -74,7 +74,7 @@ class GoalSender(Node):
 def main():
     rclpy.init()
     node = GoalSender()
-    node.send_goal(8.0, 6.5, 0.0)
+    node.send_goal(0.0, 0.0, 0.0)
 
     while rclpy.ok() and not node.done:
         rclpy.spin_once(node)
