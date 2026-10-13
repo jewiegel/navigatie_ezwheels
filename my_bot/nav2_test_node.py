@@ -36,8 +36,8 @@ class GoalSender(Node):
         if bt:
             if not os.path.isabs(bt):
                 bt = os.path.join(get_package_share_directory('my_bot'), 'behavior_trees', bt)
-                goal.behavior_tree = bt
-                self.get_logger().info(f'Loaded behavior tree: {bt}')
+            goal.behavior_tree = bt
+            self.get_logger().info(f'Loaded behavior tree: {bt}')
 
         self.get_logger().info(f'Doel verstuurd: x={x}, y={y}, yaw={yaw:.2f}')
 
@@ -74,7 +74,7 @@ class GoalSender(Node):
 def main():
     rclpy.init()
     node = GoalSender()
-    node.send_goal(1.5, 0.5, 0.0)
+    node.send_goal(8.0, 6.5, 0.0)
 
     while rclpy.ok() and not node.done:
         rclpy.spin_once(node)
