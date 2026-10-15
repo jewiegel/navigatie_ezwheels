@@ -6,10 +6,14 @@ Leest de wielodometrie (/odom) en telt de gereden afstand op. Publiceert:
     /distance_travelled  (std_msgs/Float64)  meter
     /time_since_start    (std_msgs/Float64)  seconden
 
+Schrijft periodiek de laatste stand naar een CSV (kopregel + één regel,
+steeds overschreven), zodat die ook bij uitvallen bewaard blijft.
+
 De tijd start bij het eerste /odom-bericht. Opnieuw beginnen bij nul:
     ros2 topic pub --once /distance_tracker/reset std_msgs/msg/Bool "{data: true}"
 """
 import math
+import os
 
 import rclpy
 from rclpy.node import Node
@@ -28,11 +32,16 @@ class DistanceTrackerNode(Node):
         self.declare_parameter('max_step', 0.5)         # m — grotere sprong per bericht = odom-reset, niet meetellen
         self.declare_parameter('publish_rate', 1.0)     # Hz voor /distance_travelled en /time_since_start
         self.declare_parameter('log_interval', 10.0)    # s tussen statusregels in de terminal
+        self.declare_parameter('csv_path', '/home/improvia/battery_test.csv')
+        self.declare_parameter('csv_interval', 5.0)     # s tussen het bijwerken van de CSV
 
         self._min_step = self.get_parameter('min_step').value
         self._max_step = self.get_parameter('max_step').value
         publish_rate   = self.get_parameter('publish_rate').value
         log_interval   = self.get_parameter('log_interval').value
+        csv_path       = self.get_parameter('csv_path').value
+        csv_interval   = self.get_parameter('csv_interval').value
+        self._csv_path = os.path.expanduser(csv_path) if csv_path else None
 
         self._distance   = 0.0    # opgetelde afstand in m
         self._last_xy    = None   # laatst meegetelde positie (x, y)
@@ -46,6 +55,8 @@ class DistanceTrackerNode(Node):
 
         self.create_timer(1.0 / publish_rate, self._publish)
         self.create_timer(log_interval, self._log_status)
+        if self._csv_path:
+            self.create_timer(csv_interval, self.write_csv)
 
         self.get_logger().info('DistanceTrackerNode gestart — wacht op /odom')
 
@@ -104,6 +115,24 @@ class DistanceTrackerNode(Node):
         self.get_logger().info(self.summary())
 
 
+    def write_csv(self):
+        """Overschrijft de CSV met alleen de laatste stand. Eerst naar een
+        tijdelijk bestand en dan hernoemen: zo is de CSV nooit half geschreven,
+        ook niet als de stroom precies tijdens het schrijven wegvalt."""
+        if not self._csv_path or self._start_time is None:
+            return
+        tmp_path = self._csv_path + '.tmp'
+        try:
+            with open(tmp_path, 'w') as f:
+                f.write('afstand_m,tijd_s\n')
+                f.write(f'{self._distance:.3f},{self._elapsed():.1f}\n')
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self._csv_path)
+        except OSError as e:
+            self.get_logger().error(f'CSV schrijven mislukt ({self._csv_path}): {e}')
+
+
     def summary(self) -> str:
         """Bv. 'Afstand: 123.45 m | Tijd: 00:12:34 | Gem.: 0.16 m/s'"""
         elapsed = self._elapsed()
@@ -122,6 +151,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        node.write_csv()
         node.get_logger().info(f'Eindstand — {node.summary()}')
         node.destroy_node()
         rclpy.shutdown()
