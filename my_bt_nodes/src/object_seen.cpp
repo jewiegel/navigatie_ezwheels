@@ -13,12 +13,20 @@ my_bt_nodes::ObjectSeen::ObjectSeen(const std::string &name, const BT::NodeConfi
 
 BT::PortsList ObjectSeen::providedPorts()
 {
-    return {};
+    return {
+        BT::InputPort<std::string>(
+            "topic",
+            "/object_seen",
+            "Topic met std_msgs/Bool"
+        )
+    };
 }
 
 BT::NodeStatus ObjectSeen::tick()
 {
-    RCLCPP_INFO(rclcpp::get_logger("ObjectSeen"), "Tik test");
+    std::string topic;
+    getInput("topic", topic);
+    RCLCPP_INFO(rclcpp::get_logger("ObjectSeen"), "Bruh, ik luister naar: %s", topic.c_str());
     return BT::NodeStatus::SUCCESS;
 }
 

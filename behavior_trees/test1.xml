@@ -4,7 +4,7 @@
                 <!--Kind 1: Normaal rijden-->
             <RecoveryNode number_of_retries="3" name="Navigeren">
                 <PipelineSequence name="PlannenEnVolgen">
-                    <ObjectSeen name="Bruh"/>
+                    <ObjectSeen name="Bruh" topic="/camera/object/"/>
                     <RateController hz="0.5">
                         <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
                     </RateController>
@@ -13,6 +13,7 @@
 
                 <!--Herstel, alleen als kind 1 faalt -->
                 <Sequence name="Herstel">
+                    <ObjectSeen name="Oeps" topic="ff herstellen"/>
                     <ClearEntireCostmap name="WisLokaal"
                         service_name="local_costmap/clear_entirely_local_costmap"/>
                     <ClearEntireCostmap name="WisGlobaal"
@@ -23,6 +24,7 @@
             
             </RecoveryNode>
 
+            <ObjectSeen name="Finito" topic="klaaaarrrrrrrrrr"/>
             <Wait wait_duration="5.0"/>
             <Spin spin_dist="3.14"/>
 
