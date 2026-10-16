@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import math
 import os
 from ament_index_python.packages import get_package_share_directory
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from geometry_msgs.msg import PoseStamped
@@ -15,22 +15,20 @@ class GoalSender(Node):
         super().__init__('goal_sender')
         self.declare_parameter('behavior_tree', '')
         self._client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
-        self.done = False
+        # Eigen topic: op /goal_pose luistert bt_navigator zelf al (met de standaardboom)
+        self.create_subscription(PoseStamped, 'goal_pose_bt', self.send_goal, 10)
+        self.get_logger().info('Klaar: stuur doelen met 2D Goal Pose in RViz (/goal_pose_bt)')
 
-    def send_goal(self, x, y, yaw):
-        self.get_logger().info('Wachten op nav2 server')
-        self._client.wait_for_server()
+    def send_goal(self, pose):
+        if not self._client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error('Nav2 server niet bereikbaar, doel genegeerd')
+            return
 
-        # Het doel bouwen: een positie + oriëntatie in het 'map' frame
+        # Een nieuw doel vervangt in Nav2 automatisch het lopende doel
         goal = NavigateToPose.Goal()
-        goal.pose = PoseStamped()
-        goal.pose.header.frame_id = 'map'
-        goal.pose.header.stamp = self.get_clock().now().to_msg()
-        goal.pose.pose.position.x = x
-        goal.pose.pose.position.y = y
-        # Hoek (yaw) omzetten naar een quaternion (alleen rotatie om z-as)
-        goal.pose.pose.orientation.z = math.sin(yaw / 2.0)
-        goal.pose.pose.orientation.w = math.cos(yaw / 2.0)
+        goal.pose = pose
+        # Tijd 0 = nieuwste TF. Met de kliktijd faalt het herplannen zodra die uit de TF-buffer valt.
+        goal.pose.header.stamp = Time().to_msg()
 
         bt = self.get_parameter('behavior_tree').value
         if bt:
@@ -39,7 +37,8 @@ class GoalSender(Node):
             goal.behavior_tree = bt
             self.get_logger().info(f'Loaded behavior tree: {bt}')
 
-        self.get_logger().info(f'Doel verstuurd: x={x}, y={y}, yaw={yaw:.2f}')
+        p = pose.pose.position
+        self.get_logger().info(f'Doel verstuurd: x={p.x:.2f}, y={p.y:.2f}')
 
         future = self._client.send_goal_async(goal, feedback_callback=self.feedback_cb)
         future.add_done_callback(self.goal_response_cb)
@@ -49,7 +48,6 @@ class GoalSender(Node):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().error('Doel geweigerd door Nav2')
-            self.done = True
             return
         self.get_logger().info('Doel geaccepteerd, robot rijdt...')
         goal_handle.get_result_async().add_done_callback(self.result_cb)
@@ -68,19 +66,17 @@ class GoalSender(Node):
         elif status == GoalStatus.STATUS_ABORTED:
             self.get_logger().error('Navigatie afgebroken (bijv. geen pad gevonden)')
         elif status == GoalStatus.STATUS_CANCELED:
-            self.get_logger().warn('Navigatie geannuleerd')
-        self.done = True
+            self.get_logger().warn('Navigatie geannuleerd (of vervangen door nieuw doel)')
 
 def main():
     rclpy.init()
     node = GoalSender()
-    node.send_goal(0.0, 0.0, 0.0)
-
-    while rclpy.ok() and not node.done:
-        rclpy.spin_once(node)
-
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     node.destroy_node()
-    rclpy.shutdown()
+    rclpy.try_shutdown()
 
 if __name__ == '__main__':
     main()
