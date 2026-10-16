@@ -88,13 +88,18 @@ In de container:
 
 ```bash
 cd /ros2_ws
-colcon build --base-paths src/navigatie_ezwheels
+colcon build
 source install/setup.bash
 ```
 
-- `--base-paths` is nodig omdat in `src/` twee packages met de naam `my_bot`
-  staan (`my_bot/` en `navigatie_ezwheels/`). Zonder deze optie stopt colcon met
-  *Duplicate package names*. Alternatief: `touch /ros2_ws/src/my_bot/COLCON_IGNORE`.
+- De paden staan in `/ros2_ws/colcon_defaults.yaml`, die colcon automatisch
+  leest als je vanuit `/ros2_ws` bouwt. Daarin staan `src/navigatie_ezwheels`
+  (`my_bot`) en `src/navigatie_ezwheels/my_bt_nodes` (eigen BT-nodes in C++).
+- `my_bt_nodes` moet apart genoemd worden: het staat ín de map van `my_bot`, en
+  colcon zoekt niet verder in een map die zelf al een package is.
+- De oude `src/my_bot/` valt buiten die paden, dus geen *Duplicate package
+  names*.
+- Eén package bouwen: `colcon build --packages-select my_bt_nodes`.
 - Opnieuw bouwen is nodig na wijzigingen in launch-, config- of Python-bestanden
   (die worden naar `install/` gekopieerd).
 
@@ -284,7 +289,7 @@ bestanden komen vanzelf mee. Na elke wijziging in de XML: opnieuw bouwen.
 
 ```bash
 cd /ros2_ws
-colcon build --base-paths src/navigatie_ezwheels
+colcon build
 source install/setup.bash
 ```
 
@@ -409,7 +414,7 @@ python3 -m unittest discover -s test -v
 | Probleem | Oplossing |
 |---|---|
 | `RuntimeError: !rclpy.ok()` bij `ros2 topic ...` | `ros2 daemon stop` (container én host), of `--no-daemon` |
-| `Duplicate package names` bij bouwen | `colcon build --base-paths src/navigatie_ezwheels` |
+| `Duplicate package names` bij bouwen | Bouwen vanuit `/ros2_ws` (daar staat `colcon_defaults.yaml`) |
 | `file ... was not found in the share directory` | Opnieuw bouwen en `source /ros2_ws/install/setup.bash` |
 | `Operation not permitted` bij bouwen | `build/`/`install/` zijn van root → bouw in de container of `chown` |
 | `/dev/input/js0` bestaat niet in de container | Container herstarten met de nieuwe `start.sh` |

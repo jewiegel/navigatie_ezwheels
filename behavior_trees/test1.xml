@@ -4,6 +4,7 @@
                 <!--Kind 1: Normaal rijden-->
             <RecoveryNode number_of_retries="3" name="Navigeren">
                 <PipelineSequence name="PlannenEnVolgen">
+                    <ObjectSeen name="Bruh"/>
                     <RateController hz="0.5">
                         <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
                     </RateController>

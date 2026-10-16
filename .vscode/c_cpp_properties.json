@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "ROS 2 Iron (container)",
+            // Kopie van /opt/ros/iron/include uit de container; vernieuwen na image-rebuild:
+            // docker cp ros2_iron:/opt/ros/iron/include/. ~/ros2_docker/iron_include/
+            "includePath": [
+                // Expliciet: het recursieve pad hieronder ziet nieuwe mappen pas na een herindexering
+                "${workspaceFolder}/my_bt_nodes/include",
+                "${workspaceFolder}/**",
+                "${env:HOME}/ros2_docker/iron_include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
