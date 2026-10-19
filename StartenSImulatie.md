@@ -15,6 +15,17 @@ Overzicht van de terminals die je uiteindelijk open hebt:
 | 5 | Besturing | controller of toetsenbord |
 | 6+ | Eigen nodes | `patrol_node.py`, `indicator_node.py`, … |
 
+### Snel: terminal 1–4 in één keer
+
+```bash
+ros2 launch my_bot sim_nav.launch.py                 # AMCL op /ros2_ws/maps/ziekenhuis.yaml
+ros2 launch my_bot sim_nav.launch.py map:=/ros2_ws/maps/andere.yaml
+ros2 launch my_bot sim_nav.launch.py slam:=true      # SLAM i.p.v. AMCL
+```
+
+Start Gazebo en RViz, en na 8 s AMCL (of SLAM) en Nav2, allemaal met
+`use_sim_time:=true`. Bij AMCL zet je daarna nog een **2D Pose Estimate** in RViz.
+
 ---
 
 ## 1. In de Docker container komen
@@ -77,13 +88,18 @@ In de container:
 
 ```bash
 cd /ros2_ws
-colcon build --base-paths src/navigatie_ezwheels
+colcon build
 source install/setup.bash
 ```
 
-- `--base-paths` is nodig omdat in `src/` twee packages met de naam `my_bot`
-  staan (`my_bot/` en `navigatie_ezwheels/`). Zonder deze optie stopt colcon met
-  *Duplicate package names*. Alternatief: `touch /ros2_ws/src/my_bot/COLCON_IGNORE`.
+- De paden staan in `/ros2_ws/colcon_defaults.yaml`, die colcon automatisch
+  leest als je vanuit `/ros2_ws` bouwt. Daarin staan `src/navigatie_ezwheels`
+  (`my_bot`) en `src/navigatie_ezwheels/my_bt_nodes` (eigen BT-nodes in C++).
+- `my_bt_nodes` moet apart genoemd worden: het staat ín de map van `my_bot`, en
+  colcon zoekt niet verder in een map die zelf al een package is.
+- De oude `src/my_bot/` valt buiten die paden, dus geen *Duplicate package
+  names*.
+- Eén package bouwen: `colcon build --packages-select my_bt_nodes`.
 - Opnieuw bouwen is nodig na wijzigingen in launch-, config- of Python-bestanden
   (die worden naar `install/` gekopieerd).
 
@@ -235,7 +251,89 @@ Testen in RViz:
 
 ---
 
-## 7. Eigen nodes starten en testen (terminal 6+)
+## 7. Eigen behavior tree toevoegen
+
+Nav2 gebruikt standaard `navigate_to_pose_w_replanning_and_recovery.xml`. Een
+eigen boom zet je in `behavior_trees/` (voorbeeld: `behavior_trees/test1.xml`).
+
+### 1. XML-bestand maken
+
+Maak bv. `behavior_trees/mijn_bt.xml`:
+
+```xml
+<root main_tree_to_execute="MainTree">
+    <BehaviorTree ID="MainTree">
+        <PipelineSequence name="PlannenEnVolgen">
+            <RateController hz="1.0">
+                <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            </RateController>
+            <FollowPath path="{path}" controller_id="FollowPath"/>
+        </PipelineSequence>
+    </BehaviorTree>
+</root>
+```
+
+- `planner_id` / `controller_id` moeten overeenkomen met de namen in
+  `config/nav2_params.yaml` (`GridBased`, `FollowPath`).
+- Elke node die je gebruikt (`Spin`, `BackUp`, `ClearEntireCostmap`, …) moet
+  een plugin hebben in `bt_navigator` → `plugin_lib_names` in
+  `config/nav2_params.yaml`. Ontbreekt die, dan weigert Nav2 het doel met
+  *"Error loading XML"* / *"node not recognized"* in de log van terminal 3.
+- Herstel-acties gebruiken de behaviors uit `behavior_server` →
+  `behavior_plugins` (`spin`, `backup`, `wait`, …).
+
+### 2. Bouwen
+
+De map `behavior_trees/` wordt al geïnstalleerd (`CMakeLists.txt`), dus nieuwe
+bestanden komen vanzelf mee. Na elke wijziging in de XML: opnieuw bouwen.
+
+```bash
+cd /ros2_ws
+colcon build
+source install/setup.bash
+```
+
+### 3a. Per doel gebruiken (testen)
+
+`nav2_test_node.py` blijft draaien en stuurt elk doel dat je in RViz klikt naar
+Nav2, met de gekozen boom. Een relatieve naam wordt gezocht in
+`share/my_bot/behavior_trees/`:
+
+```bash
+ros2 run my_bot nav2_test_node.py --ros-args \
+  -p behavior_tree:=mijn_bt.xml -p use_sim_time:=true
+```
+
+- **2D Goal Pose** in RViz publiceert (met `config/setup.rviz`) op
+  `/goal_pose_bt`; de node maakt daar een Nav2-doel van. Een nieuw doel
+  vervangt het lopende doel.
+- **2D Pose Estimate** gaat zoals altijd rechtstreeks naar AMCL (`/initialpose`).
+- Draait de node niet, dan doet **2D Goal Pose** niets: Nav2 zelf luistert op
+  `/goal_pose`. Zet in RViz het topic van de tool terug op `/goal_pose` om
+  zonder de node met de standaardboom te rijden.
+- Zonder `behavior_tree` gebruikt de node de standaardboom. `patrol_node`
+  gebruikt altijd de standaardboom.
+
+### 3b. Als standaardboom instellen
+
+Wil je dat álle doelen (ook RViz en patrouille) je boom gebruiken, zet dan in
+`config/nav2_params.yaml` onder `bt_navigator` → `ros__parameters`:
+
+```yaml
+    default_nav_to_pose_bt_xml: /ros2_ws/install/my_bot/share/my_bot/behavior_trees/mijn_bt.xml
+```
+
+Opnieuw bouwen en Nav2 herstarten.
+
+### Debuggen
+
+- Log van Nav2 (terminal 3) toont fouten bij het laden van de XML.
+- `ros2 topic echo /behavior_tree_log` laat zien welke node van status
+  verandert (`RUNNING` → `SUCCESS` / `FAILURE`).
+
+---
+
+## 8. Eigen nodes starten en testen (terminal 6+)
 
 Nav2 (stap 6) moet draaien. Geef elke node `use_sim_time:=true` mee.
 
@@ -300,7 +398,7 @@ ros2 run my_bot mqtt_hmi_bridge.py --ros-args -p broker_host:=localhost
 
 ---
 
-## 8. Unittests (zonder simulatie)
+## 9. Unittests (zonder simulatie)
 
 De patrouille-logica heeft tests die zonder ROS, Nav2 of robot draaien:
 
@@ -316,7 +414,7 @@ python3 -m unittest discover -s test -v
 | Probleem | Oplossing |
 |---|---|
 | `RuntimeError: !rclpy.ok()` bij `ros2 topic ...` | `ros2 daemon stop` (container én host), of `--no-daemon` |
-| `Duplicate package names` bij bouwen | `colcon build --base-paths src/navigatie_ezwheels` |
+| `Duplicate package names` bij bouwen | Bouwen vanuit `/ros2_ws` (daar staat `colcon_defaults.yaml`) |
 | `file ... was not found in the share directory` | Opnieuw bouwen en `source /ros2_ws/install/setup.bash` |
 | `Operation not permitted` bij bouwen | `build/`/`install/` zijn van root → bouw in de container of `chown` |
 | `/dev/input/js0` bestaat niet in de container | Container herstarten met de nieuwe `start.sh` |
