@@ -1,0 +1,18 @@
+# Routes voor de route_manager (RouteManagerServer -> get_route -> MissionManagerNode).
+# Waypoints in het map-frame: x, y in meter, yaw in radialen (rijrichting bij aankomst).
+# Starten: ros2 service call /start_route my_bot_interfaces/srv/StartRoute "{route_name: gang_a}"
+# Na wijzigen: colcon build (dit bestand wordt naar share/my_bot/config gekopieerd), of
+# start de route_manager met -p routes_file:=<pad> om direct een bestand te gebruiken.
+
+routes:
+  gang_a:
+    map_id: ziekenhuis
+    waypoints:
+      - {name: gang_a_1, x: 3.19, y: 0.21, yaw: 0.0}
+      - {name: gang_a_2, x: 5.48, y: -0.6, yaw: -0.8}
+
+  heen_en_terug:
+    map_id: ziekenhuis
+    waypoints:
+      - {name: keerpunt, x: 3.19, y: 0.21, yaw: 3.14}
+      - {name: start, x: 0.35, y: 0.16, yaw: 0.0}

@@ -13,6 +13,14 @@ def generate_launch_description():
 
         Node(
             package='my_bot',
+            executable='RouteManagerServer.py',
+            name='route_manager',
+            output='screen',
+            on_exit=Shutdown(),
+        ),
+
+        Node(
+            package='my_bot',
             executable='MissionManagerNode.py',
             name='mission_manager',
             output='screen',

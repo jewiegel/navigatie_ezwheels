@@ -18,7 +18,7 @@
   obstacle before the check.
 -->
 <root main_tree_to_execute="HospitalNavigate">
-  <BehaviorTree ID="HospitalNavigate">
+  <BehaviorTree ID="HospitalNavigate"> 
     <RetryUntilSuccessful num_attempts="-1" name="KeepNavigating">
       <Fallback name="RouteOrBlockade">
         <Fallback name="FollowRoute">

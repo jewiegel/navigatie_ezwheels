@@ -178,8 +178,7 @@ Niet gebruiken voor deze boom:
 
 - **Start Waypoint Following** — stuurt elk punt apart als `NavigateToPose` →
   standaardboom van Nav2.
-- **2D Goal Pose** — publiceert in deze RViz-config op `/goal_pose_bt` voor
-  `nav2_test_node.py` (stap 7); zonder die node gebeurt er niets.
+- **2D Goal Pose** — stuurt één `NavigateToPose` → standaardboom van Nav2.
 
 Met **Cancel** in het paneel stop je het doel.
 
@@ -328,19 +327,6 @@ bewaard, want die map is gemount). Zet de SLAM-modus daarna weer terug.
 - Nav2 laadt plugins en de boom alleen bij het opstarten: na een wijziging
   opnieuw bouwen en `sim.launch.py` herstarten.
 
-### Losse boom proberen met nav2_test_node
-
-Voor experimenten met een losse XML in `behavior_trees/` van `my_bot`
-(`NavigateToPose`):
-
-```bash
-ros2 run my_bot nav2_test_node.py --ros-args \
-  -p behavior_tree:=test1.xml -p use_sim_time:=true
-```
-
-Klik daarna een doel met **2D Goal Pose** (publiceert op `/goal_pose_bt`). De
-node stuurt elk geklikt doel met die boom naar Nav2.
-
 ### Debuggen
 
 - Fouten bij het laden van de boom staan in de log van `bt_navigator`
@@ -354,22 +340,52 @@ node stuurt elk geklikt doel met die boom naar Nav2.
 
 ## 7. Eigen nodes
 
-### MissionManagerNode
+### Routes rijden: route_manager + MissionManagerNode
 
-Lifecycle-node die routes start via Nav2 (`NavigateThroughPoses`, dus met de
-ziekenhuisboom) en de missietoestand bijhoudt.
+- **route_manager** (`RouteManagerServer.py`) levert routes op naam via de service
+  `get_route`. Routes staan in `config/routes.yaml`.
+- **MissionManagerNode** haalt bij `start_route` de route op bij de route_manager,
+  stuurt hem als `NavigateThroughPoses` naar Nav2 (dus met de ziekenhuisboom) en
+  houdt de missietoestand bij op `/mission_status`
+  (`IDLE` → `DRIVING` ⇄ `BLOCKED` → `ARRIVED`, of `WAITING_OPERATOR` als Nav2 het
+  doel afbreekt).
+
+Starten, naast `sim.launch.py` (elk in een eigen terminal):
 
 ```bash
+ros2 run my_bot RouteManagerServer.py --ros-args -p use_sim_time:=true
 ros2 run my_bot MissionManagerNode.py --ros-args -p use_sim_time:=true
+```
 
+Bedienen:
+
+```bash
 ros2 service call /start_route my_bot_interfaces/srv/StartRoute "{route_name: gang_a}"
-ros2 service call /cancel_mission std_srvs/srv/Trigger
+ros2 service call /cancel_mission std_srvs/srv/Trigger     # stoppen / resetten
 ros2 topic echo /mission_status
 ```
 
-> Heeft de service `get_route` (route_manager) nodig om een route op naam op te
-> halen. Die bestaat nog niet: zonder route_manager weigert `start_route` elke
-> route.
+Na `ARRIVED` kan direct een nieuwe route; na `WAITING_OPERATOR` eerst `cancel_mission`.
+
+Routes toevoegen in `config/routes.yaml` (daarna `colcon build`):
+
+```yaml
+routes:
+  gang_a:
+    map_id: ziekenhuis
+    waypoints:
+      - {name: gang_a_1, x: 3.19, y: 0.21, yaw: 0.0}    # m, m, rad in het map-frame
+      - {name: gang_a_2, x: 5.48, y: -0.6, yaw: -0.8}
+```
+
+- Coördinaten opzoeken: **Publish Point** in RViz en `ros2 topic echo /clicked_point`.
+- `yaw` is de richting waarin de robot op het waypoint gaat staan; laat hem
+  wijzen naar het volgende waypoint.
+- Het bestand wordt bij elke aanvraag opnieuw gelezen. Wil je routes aanpassen
+  zonder te bouwen, start de route_manager dan met
+  `-p routes_file:=/ros2_ws/src/navigatie_ezwheels/config/routes.yaml`.
+- Een fout in het bestand (bv. ontbrekende `yaw`) geeft bij `start_route` een
+  melding met route en waypointnummer; `start_route` weigert dan.
 
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
@@ -394,6 +410,7 @@ colcon test-result --verbose
 
 cd /ros2_ws/src/navigatie_ezwheels
 python3 -m unittest discover -s test -p "test_mission*" -v   # MissionStateMachine
+python3 -m unittest discover -s test -p "test_route*" -v     # route-opslag (routes.yaml)
 ```
 
 `test/test_patrol_controller.py` en `test/fakes.py` horen bij de verwijderde
@@ -410,8 +427,10 @@ python3 -m unittest discover -s test -p "test_mission*" -v   # MissionStateMachi
 | `Package 'hospital_robot_bringup' not found` | Bouwen en `source /ros2_ws/install/setup.bash` in die terminal |
 | `colcon test` vindt een pakket niet | Draaien vanuit `/ros2_ws` |
 | `Operation not permitted` bij bouwen | `build/`/`install/` zijn van root → bouw in de container of `chown` |
-| Robot rijdt niet bij **2D Goal Pose** | Die knop is voor `nav2_test_node.py`; gebruik het Nav2-paneel (stap 3) |
-| Robot rijdt met de standaardboom i.p.v. de ziekenhuisboom | Gestart met **Start Waypoint Following** of `navigate_to_pose`; gebruik **Start Nav Through Poses** |
+| `start_route` weigert: `Service /get_route niet beschikbaar` | route_manager starten (stap 7) |
+| `start_route` weigert: `Onbekende route` | Naam staat niet in `routes.yaml` (de melding noemt de beschikbare routes) |
+| `start_route` weigert: `Kan niet starten in WAITING_OPERATOR` | Eerst `ros2 service call /cancel_mission std_srvs/srv/Trigger` |
+| Robot rijdt met de standaardboom i.p.v. de ziekenhuisboom | Gestart met **2D Goal Pose**, **Start Waypoint Following** of `navigate_to_pose`; gebruik **Start Nav Through Poses** of `start_route` |
 | `navigation/blocked = true` zonder obstakel | Log van `controller_server`: `Failed to make progress` → robot schoot `progress_timeout_s` lang geen 0,5 m op |
 | bt_navigator start niet: `Could not load library` | Plugin staat in `plugin_lib_names` maar is niet gebouwd; bouwen of uit `nav2_params.yaml` halen |
 | `Node not recognized` in de boom | Plugin ontbreekt in `HOSPITAL_BT_PLUGINS` of in `plugin_lib_names` |
