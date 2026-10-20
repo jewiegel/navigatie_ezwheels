@@ -16,7 +16,8 @@
 Gazebo test of the hospital behavior tree.
 
 Starts the hospital world (my_bot/launch_sim.launch.py), RViz, AMCL on the
-hospital map and Nav2 with the hospital behavior tree (navigation.launch.py).
+hospital map, Nav2 with the hospital behavior tree (navigation.launch.py), the
+route_manager and the MissionManagerNode.
 """
 
 import os
@@ -50,6 +51,11 @@ def generate_launch_description():
             default_value=os.path.join(
                 get_package_share_directory('hospital_robot_bringup'), 'config', 'timing.yaml'),
             description='Timing parameters (navigation.*)'),
+        DeclareLaunchArgument(
+            'routes_file',
+            # Source tree, not install/: routes saved with route_draft/save must survive a build.
+            default_value='/ros2_ws/src/navigatie_ezwheels/config/routes.yaml',
+            description='Routes file of the route_manager (read and written)'),
 
         _include('my_bot', 'launch_sim.launch.py', {}),
 
@@ -67,5 +73,15 @@ def generate_launch_description():
                 'timing_file': LaunchConfiguration('timing_file'),
                 'use_sim_time': 'true',
             }),
+            Node(
+                package='my_bot', executable='RouteManagerServer.py', name='route_manager',
+                output='screen',
+                parameters=[{
+                    'use_sim_time': True,
+                    'routes_file': LaunchConfiguration('routes_file'),
+                }]),
+            Node(
+                package='my_bot', executable='MissionManagerNode.py', name='mission_manager',
+                output='screen', parameters=[{'use_sim_time': True}]),
         ]),
     ])

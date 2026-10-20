@@ -36,22 +36,28 @@ GENERIC_ATTRIBUTES = {'name', 'ID'}
 BUILTIN_PORTS = {'RetryUntilSuccessful': {'num_attempts'}}
 
 
-def _template():
+TEMPLATES = ['hospital_navigate.xml.in', 'hospital_navigate_to_pose.xml.in']
+
+
+def _template(name='hospital_navigate.xml.in'):
     path = os.path.join(
-        get_package_share_directory('hospital_robot_navigation'),
-        'behavior_trees', 'hospital_navigate.xml.in')
+        get_package_share_directory('hospital_robot_navigation'), 'behavior_trees', name)
     with open(path) as f:
         return f.read()
 
 
-def _nav2_params():
-    path = os.path.join(get_package_share_directory('my_bot'), 'config', 'nav2_params.yaml')
+NAV2_PARAM_FILES = ['nav2_params.yaml', 'nav2_params_robot.yaml']   # simulation, real robot
+
+
+def _nav2_params(name='nav2_params.yaml'):
+    path = os.path.join(get_package_share_directory('my_bot'), 'config', name)
     with open(path) as f:
         return yaml.safe_load(f)
 
 
-def test_render_fills_all_placeholders():
-    rendered = render_bt(_template(), TEST_VALUES)
+@pytest.mark.parametrize('template', TEMPLATES)
+def test_render_fills_all_placeholders(template):
+    rendered = render_bt(_template(template), TEST_VALUES)
     assert '${' not in rendered
     root = ET.fromstring(rendered)
     assert root.find('.//Wait').get('wait_duration') == '7.5'
@@ -76,28 +82,37 @@ def test_timing_file_missing_key(tmp_path):
         load_navigation_timing(str(timing))
 
 
-def test_installed_timing_file_is_complete():
+@pytest.mark.parametrize('template', TEMPLATES)
+def test_installed_timing_file_is_complete(template):
     timing = load_navigation_timing(os.path.join(
         get_package_share_directory('hospital_robot_bringup'), 'config', 'timing.yaml'))
-    render_bt(_template(), timing)
+    render_bt(_template(template), timing)
 
 
-def test_nav2_params_get_tree_plugins_and_timeout():
-    base = _nav2_params()
-    params = nav2_params_with_hospital_bt(base, '/tmp/tree.xml', HOSPITAL_PLUGINS, 12.5)
+@pytest.mark.parametrize('param_file', NAV2_PARAM_FILES)
+def test_nav2_params_get_tree_plugins_and_timeout(param_file):
+    base = _nav2_params(param_file)
+    trees = {
+        'default_nav_through_poses_bt_xml': '/tmp/through.xml',
+        'default_nav_to_pose_bt_xml': '/tmp/to_pose.xml',
+    }
+    params = nav2_params_with_hospital_bt(base, trees, HOSPITAL_PLUGINS, 12.5)
     bt = params['bt_navigator']['ros__parameters']
     base_libs = base['bt_navigator']['ros__parameters']['plugin_lib_names']
-    assert bt['default_nav_through_poses_bt_xml'] == '/tmp/tree.xml'
+    assert bt['default_nav_through_poses_bt_xml'] == '/tmp/through.xml'
+    assert bt['default_nav_to_pose_bt_xml'] == '/tmp/to_pose.xml'
     assert bt['plugin_lib_names'] == base_libs + HOSPITAL_PLUGINS
     checker = params['controller_server']['ros__parameters']['progress_checker']
     assert checker['movement_time_allowance'] == 12.5
     assert base['bt_navigator']['ros__parameters'] is not bt   # base left untouched
 
 
-def test_tree_uses_only_registered_nodes_and_ports(tmp_path):
+@pytest.mark.parametrize('param_file', NAV2_PARAM_FILES)
+@pytest.mark.parametrize('template', TEMPLATES)
+def test_tree_uses_only_registered_nodes_and_ports(tmp_path, template, param_file):
     tree_file = tmp_path / 'tree.xml'
-    tree_file.write_text(render_bt(_template(), TEST_VALUES))
-    libs = _nav2_params()['bt_navigator']['ros__parameters']['plugin_lib_names']
+    tree_file.write_text(render_bt(_template(template), TEST_VALUES))
+    libs = _nav2_params(param_file)['bt_navigator']['ros__parameters']['plugin_lib_names']
     checker = os.path.join(
         get_package_prefix('hospital_robot_navigation'),
         'lib', 'hospital_robot_navigation', 'check_bt_xml')

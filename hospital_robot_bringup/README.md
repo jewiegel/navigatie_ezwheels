@@ -5,7 +5,12 @@ Start Nav2 met de behavior tree van de ziekenhuisrobot.
 ## Inhoud
 
 - `config/timing.yaml` — tijden van de robot (sectie `navigation`).
-- `launch/navigation.launch.py` — vult `hospital_navigate.xml.in` in, past de
+- `launch/sim.launch.py` — Gazebo + RViz + AMCL + Nav2 (ziekenhuisbomen) + route_manager + MissionManagerNode.
+- `launch/robot.launch.py` — echte robot: hetzelfde zonder Gazebo/RViz, met
+  `nav2_params_robot.yaml`, verplicht argument `map:=`, optioneel `foxglove:=false`.
+  Verwacht dat de robotsoftware lidar (`/laser_1/scan_filtered`), `/odom`, TF en
+  de wieldriver levert. Zie `StartenSImulatie.md` §8.
+- `launch/navigation.launch.py` — vult de boom-sjablonen in, past de
   Nav2-parameters aan en start `my_bot/launch/navigation_launch.py`.
 - `hospital_robot_bringup/bt_template.py` — de functies daarvoor (ook gebruikt in de test).
 
@@ -13,10 +18,12 @@ Start Nav2 met de behavior tree van de ziekenhuisrobot.
 
 1. Leest `navigation.*` uit `timing.yaml`; ontbreekt een sleutel → harde fout.
 2. Vult `${blockade_wait_s}` in; staat er daarna nog een
-   `${` in de XML → harde fout met regelnummer. Resultaat in `/tmp/hospital_navigate_*.xml`.
+   `${` in de XML → harde fout met regelnummer. Dat gebeurt voor beide sjablonen;
+   resultaat in `/tmp/hospital_navigate_*.xml` en `/tmp/hospital_navigate_to_pose_*.xml`.
 3. Maakt een kopie van het Nav2-parameterbestand met:
-   - `bt_navigator.default_nav_through_poses_bt_xml` = de ingevulde boom;
-   - `bt_navigator.plugin_lib_names` = de bestaande lijst **+** de twee
+   - `bt_navigator.default_nav_through_poses_bt_xml` = ingevulde `hospital_navigate.xml.in`;
+   - `bt_navigator.default_nav_to_pose_bt_xml` = ingevulde `hospital_navigate_to_pose.xml.in`;
+   - `bt_navigator.plugin_lib_names` = de bestaande lijst **+** de
      hospital-plugins (in Iron vervangt deze parameter de standaardlijst);
    - `controller_server.progress_checker.movement_time_allowance` = `navigation.progress_timeout_s`.
 4. Start Nav2 met die kopie. Er worden geen extra nodes gestart.

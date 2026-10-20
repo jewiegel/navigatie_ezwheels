@@ -52,8 +52,12 @@ def render_bt(template_text, values):
     return rendered
 
 
-def nav2_params_with_hospital_bt(base_params, bt_xml_file, plugin_libs, progress_timeout_s):
-    """Return a copy of the Nav2 parameter dict with the hospital tree and plugins."""
+def nav2_params_with_hospital_bt(base_params, bt_xml_files, plugin_libs, progress_timeout_s):
+    """
+    Return a copy of the Nav2 parameter dict with the hospital trees and plugins.
+
+    bt_xml_files maps bt_navigator parameters (e.g. default_nav_to_pose_bt_xml) to tree files.
+    """
     params = copy.deepcopy(base_params)
     try:
         bt_navigator = params['bt_navigator']['ros__parameters']
@@ -61,7 +65,7 @@ def nav2_params_with_hospital_bt(base_params, bt_xml_file, plugin_libs, progress
     except KeyError as e:
         raise KeyError(f'Nav2 parameter file has no {e} section') from None
 
-    bt_navigator['default_nav_through_poses_bt_xml'] = bt_xml_file
+    bt_navigator.update(bt_xml_files)
     # Iron: plugin_lib_names replaces Nav2's default list, so append to the full list.
     libs = list(bt_navigator.get('plugin_lib_names', []))
     if not libs:

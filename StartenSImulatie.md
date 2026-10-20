@@ -94,9 +94,9 @@ De pakketten:
 | Pakket | Inhoud |
 |---|---|
 | `my_bot` | robotmodel, Gazebo-wereld, Nav2-config (`config/nav2_params.yaml`), launch-files, eigen Python-nodes |
-| `my_bot_interfaces` | messages/services voor de MissionManagerNode (`StartRoute`, `GetRoute`) |
+| `my_bot_interfaces` | messages/services voor MissionManagerNode en route_manager (`StartRoute`, `GetRoute`, `SaveRoute`) |
 | `hospital_robot_bt_nodes` | eigen BT-plugins in C++ (`PublishBlocked`, `IsPathBlocked`, `GetNextWaypoint`, `PopWaypoint`) |
-| `hospital_robot_navigation` | de behavior tree-sjabloon `hospital_navigate.xml.in` |
+| `hospital_robot_navigation` | de behavior tree-sjablonen (`hospital_navigate.xml.in`, `hospital_navigate_to_pose.xml.in`) |
 | `hospital_robot_bringup` | launch-files en `config/timing.yaml` |
 
 - De paden staan in `/ros2_ws/colcon_defaults.yaml`, die colcon automatisch
@@ -133,9 +133,10 @@ Wat er gebeurt:
    - AMCL op de ziekenhuiskaart. De beginpositie (0, 0) wordt automatisch gezet
      (`set_initial_pose` in `nav2_params.yaml`), dus **2D Pose Estimate is niet
      nodig** zolang de robot op zijn spawnplek staat.
-   - Nav2 via `hospital_robot_bringup/navigation.launch.py`: die vult
-     `hospital_navigate.xml.in` in met de tijden uit `timing.yaml`, zet hem als
-     boom voor `NavigateThroughPoses`, voegt de eigen BT-plugins toe aan
+   - Nav2 via `hospital_robot_bringup/navigation.launch.py`: die vult de
+     sjablonen in met de tijden uit `timing.yaml` en zet ze als boom voor
+     `NavigateThroughPoses` (`hospital_navigate.xml.in`) en `NavigateToPose`
+     (`hospital_navigate_to_pose.xml.in`), voegt de eigen BT-plugins toe aan
      `plugin_lib_names` en zet de progress-timeout.
 
 Klaar als in de log `lifecycle_manager_navigation: Managed nodes are active` staat
@@ -163,22 +164,23 @@ navigation:
   blockade_wait_s: 10.0      # blokkade: wachttijd tussen twee checks of het pad vrij is
 ```
 
-### Een route rijden vanuit RViz
+### Rijden vanuit RViz
 
-De ziekenhuisboom hoort bij **NavigateThroughPoses**. Gebruik daarom het
-**Navigation 2**-paneel:
+Alle manieren gebruiken het ziekenhuisgedrag (blokkadeprocedure, nooit opgeven):
+
+| RViz | Nav2-actie | Boom |
+|---|---|---|
+| **2D Goal Pose** (één doel) | `NavigateToPose` | `hospital_navigate_to_pose.xml.in` |
+| Nav2-paneel → **Start Nav Through Poses** (route) | `NavigateThroughPoses` | `hospital_navigate.xml.in` |
+| Nav2-paneel → **Start Waypoint Following** | per waypoint een `NavigateToPose` | `hospital_navigate_to_pose.xml.in` |
+
+Een route met het **Navigation 2**-paneel:
 
 1. Klik in het paneel op **Waypoint / Nav Through Poses Mode**.
 2. Kies **Nav2 Goal** in de werkbalk en klik de waypoints op de kaart
    (klik = plek, slepen = richting). Laat de pijl wijzen naar het volgende
    waypoint, anders draait de robot daar onnodig.
 3. Klik **Start Nav Through Poses**.
-
-Niet gebruiken voor deze boom:
-
-- **Start Waypoint Following** — stuurt elk punt apart als `NavigateToPose` →
-  standaardboom van Nav2.
-- **2D Goal Pose** — stuurt één `NavigateToPose` → standaardboom van Nav2.
 
 Met **Cancel** in het paneel stop je het doel.
 
@@ -309,7 +311,9 @@ bewaard, want die map is gemount). Zet de SLAM-modus daarna weer terug.
 
 ## 6. De ziekenhuis-behavior tree aanpassen
 
-- **Boom:** `hospital_robot_navigation/behavior_trees/hospital_navigate.xml.in`.
+- **Bomen:** `hospital_robot_navigation/behavior_trees/hospital_navigate.xml.in`
+  (route, NavigateThroughPoses) en `hospital_navigate_to_pose.xml.in` (één doel,
+  NavigateToPose). Houd de blokkadeprocedure in beide gelijk.
   Placeholders `${naam}` worden bij het opstarten ingevuld uit de sectie
   `navigation` van `timing.yaml`. Ontbreekt een waarde, of staat er na het
   invullen nog een `${`, dan stopt de launch met een duidelijke fout.
@@ -334,7 +338,8 @@ bewaard, want die map is gemount). Zet de SLAM-modus daarna weer terug.
 - `ros2 topic echo /behavior_tree_log` laat zien welke node van status
   verandert (`RUNNING` → `SUCCESS` / `FAILURE`).
 - Welke boom Nav2 gebruikt:
-  `ros2 param get /bt_navigator default_nav_through_poses_bt_xml`.
+  `ros2 param get /bt_navigator default_nav_through_poses_bt_xml` (en
+  `default_nav_to_pose_bt_xml`).
 
 ---
 
@@ -350,10 +355,14 @@ bewaard, want die map is gemount). Zet de SLAM-modus daarna weer terug.
   (`IDLE` → `DRIVING` ⇄ `BLOCKED` → `ARRIVED`, of `WAITING_OPERATOR` als Nav2 het
   doel afbreekt).
 
-Starten, naast `sim.launch.py` (elk in een eigen terminal):
+`sim.launch.py` start beide al mee. De route_manager gebruikt daar
+`/ros2_ws/src/navigatie_ezwheels/config/routes.yaml` (argument `routes_file`), dus
+opgeslagen routes blijven bewaard en komen in git; bouwen is niet nodig. Zonder
+`sim.launch.py` (bv. op de robot) start je ze los:
 
 ```bash
-ros2 run my_bot RouteManagerServer.py --ros-args -p use_sim_time:=true
+ros2 run my_bot RouteManagerServer.py --ros-args -p use_sim_time:=true \
+  -p routes_file:=/ros2_ws/src/navigatie_ezwheels/config/routes.yaml
 ros2 run my_bot MissionManagerNode.py --ros-args -p use_sim_time:=true
 ```
 
@@ -367,25 +376,73 @@ ros2 topic echo /mission_status
 
 Na `ARRIVED` kan direct een nieuwe route; na `WAITING_OPERATOR` eerst `cancel_mission`.
 
-Routes toevoegen in `config/routes.yaml` (daarna `colcon build`):
+### Een route maken door te klikken
+
+De route_manager houdt een **concept-route** bij. Elke pose op
+`route_draft/add_pose` (frame `map`) wordt een waypoint: plek = waar je klikt,
+richting = waar je naartoe sleept. De concept-route staat op `route_draft/poses`
+(in RViz de oranje pijlen van het display **RouteDraft**).
+
+1. **Klikken**
+   - **Foxglove:** 3D-panel, Display frame `map`, **Publish → Pose** met topic
+     `/route_draft/add_pose`. Klik en sleep per waypoint. Voeg `/route_draft/poses`
+     toe in het 3D-panel om ze te zien.
+   - **RViz:** zet bij **Tool Properties → 2D Goal Pose → Topic**
+     tijdelijk `/route_draft/add_pose` en klik zoals bij een doel. Zet hem daarna
+     terug op `/goal_pose`, anders rijdt de robot niet meer op **2D Goal Pose**.
+2. **Corrigeren**
+   ```bash
+   ros2 service call /route_draft/undo  std_srvs/srv/Trigger   # laatste waypoint weg
+   ros2 service call /route_draft/clear std_srvs/srv/Trigger   # opnieuw beginnen
+   ```
+3. **Opslaan** (daarna is de concept-route weer leeg)
+   ```bash
+   ros2 service call /route_draft/save my_bot_interfaces/srv/SaveRoute "{name: gang_b}"
+   ros2 service call /route_draft/save my_bot_interfaces/srv/SaveRoute "{name: gang_b, overwrite: true}"  # vervangen
+   ```
+   Naam: letters, cijfers, `_` en `-`. De waypoints heten `gang_b_1`, `gang_b_2`, …
+4. **Rijden**
+   ```bash
+   ros2 service call /start_route my_bot_interfaces/srv/StartRoute "{route_name: gang_b}"
+   ```
+
+In Foxglove kan stap 2–4 met het **Service Call**-panel (zelfde service en type).
+
+### Een opgeslagen route bekijken
+
+```bash
+ros2 service call /get_route my_bot_interfaces/srv/GetRoute "{name: gang_a}"
+```
+
+Het antwoord bevat alle waypoints (naam, x, y, yaw). Daarnaast publiceert de
+route_manager elke opgevraagde route op `route_preview` (PoseArray, frame `map`):
+in RViz de blauwe pijlen van het display **RoutePreview**, in Foxglove het topic
+`/route_preview` in het 3D-panel. Ook een route die met `start_route` gestart
+wordt, verschijnt daar, dus je ziet altijd welke route de robot rijdt.
+
+Tips:
+
+- Klik waypoints minstens ~0,6 m van muren (robotstraal 0,22 m + inflation
+  0,55 m). Ligt een waypoint te dicht bij een muur, dan kan Nav2 er niet heen
+  plannen en blijft de robot (die nooit opgeeft) op `blocked = true` staan.
+- Sleep de richting naar het volgende waypoint; anders draait de robot daar
+  eerst om zijn as.
+- Een pose in een ander frame dan `map` wordt genegeerd (met een waarschuwing in
+  de log van de route_manager).
+- Handmatig bewerken van `config/routes.yaml` kan ook; het bestand wordt bij elke
+  aanvraag opnieuw gelezen:
 
 ```yaml
 routes:
   gang_a:
     map_id: ziekenhuis
     waypoints:
-      - {name: gang_a_1, x: 3.19, y: 0.21, yaw: 0.0}    # m, m, rad in het map-frame
-      - {name: gang_a_2, x: 5.48, y: -0.6, yaw: -0.8}
+    - {name: gang_a_1, x: 3.19, y: 0.21, yaw: 0.0}    # m, m, rad in het map-frame
+    - {name: gang_a_2, x: 5.48, y: -0.6, yaw: -0.8}
 ```
 
-- Coördinaten opzoeken: **Publish Point** in RViz en `ros2 topic echo /clicked_point`.
-- `yaw` is de richting waarin de robot op het waypoint gaat staan; laat hem
-  wijzen naar het volgende waypoint.
-- Het bestand wordt bij elke aanvraag opnieuw gelezen. Wil je routes aanpassen
-  zonder te bouwen, start de route_manager dan met
-  `-p routes_file:=/ros2_ws/src/navigatie_ezwheels/config/routes.yaml`.
-- Een fout in het bestand (bv. ontbrekende `yaw`) geeft bij `start_route` een
-  melding met route en waypointnummer; `start_route` weigert dan.
+  Een fout in het bestand (bv. ontbrekende `yaw`) geeft bij `start_route` een
+  melding met route en waypointnummer.
 
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
@@ -401,7 +458,61 @@ ros2 run my_bot mqtt_hmi_bridge.py --ros-args -p broker_host:=localhost   # MQTT
 
 ---
 
-## 8. Tests (zonder simulatie)
+## 8. Op de echte robot
+
+```bash
+ros2 launch hospital_robot_bringup robot.launch.py map:=<kaart van het gebouw>.yaml \
+  routes_file:=<schrijfbare map>/routes.yaml
+```
+
+Start hetzelfde als `sim.launch.py`, maar zonder Gazebo en RViz en met
+`config/nav2_params_robot.yaml` (`use_sim_time` uit):
+
+- AMCL + map_server op `map` (verplicht argument: de kaart van het echte gebouw,
+  niet de simulatiekaart)
+- Nav2 met beide ziekenhuisbomen (`hospital_robot_bringup/navigation.launch.py`)
+- route_manager en MissionManagerNode
+- foxglove_bridge op poort 8765 (uit met `foxglove:=false`)
+
+| Argument | Standaard |
+|---|---|
+| `map` | — (verplicht) |
+| `routes_file` | `share/my_bot/config/routes.yaml` — **opgeslagen routes zijn weg na de volgende build**; geef een pad buiten `install/` |
+| `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
+| `foxglove` | `true` |
+
+Voorwaarden op de robot:
+
+- **De EZ-Wheel/EZ-Way-software levert de hardware**: lidar op
+  `/laser_1/scan_filtered`, `/odom`, TF `odom → base_footprint → base_link` en een
+  driver die naar `/cmd_vel` luistert. Deze launch start géén drivers,
+  robot_state_publisher of lidar.
+- **De navigatie van EZ-Way ("automatic mode") mag niet tegelijk draaien**: die
+  heeft eigen Nav2-nodes met dezelfde namen en kan de ziekenhuis-BT-plugins niet
+  laden.
+- Zelfde DDS-instellingen als de EZ-Way-software, bv.
+  `export CYCLONEDDS_URI=file:///home/ezway/.config/ez-way/ez_way_bringup/cyclonedds_config.xml`
+  (zie `README.md`).
+- Alle pakketten gebouwd in de robot-container (`colcon build`), inclusief
+  `foxglove_bridge` als je die gebruikt.
+
+Na het starten:
+
+1. **Beginpositie zetten.** AMCL start op (0, 0) van de kaart. Staat de robot
+   ergens anders: Foxglove 3D-panel → **Publish → Pose estimate** (topic
+   `/initialpose`), of RViz **2D Pose Estimate** vanaf een laptop.
+2. Controleer in Foxglove dat de scan (`/laser_1/scan_filtered`) op de muren van de
+   kaart valt.
+3. Routes maken en rijden zoals in stap 7 (concept-route klikken, `route_draft/save`,
+   `start_route`). Begin met korte routes en een hand bij de noodstop.
+
+Komt Nav2 niet op `Managed nodes are active` maar blijft de log
+`Timed out waiting for transform from base_link to odom` herhalen, dan levert de
+robotsoftware de odometrie/TF niet (driver uit of ander DDS-domein).
+
+---
+
+## 9. Tests (zonder simulatie)
 
 ```bash
 cd /ros2_ws
@@ -428,9 +539,11 @@ python3 -m unittest discover -s test -p "test_route*" -v     # route-opslag (rou
 | `colcon test` vindt een pakket niet | Draaien vanuit `/ros2_ws` |
 | `Operation not permitted` bij bouwen | `build/`/`install/` zijn van root → bouw in de container of `chown` |
 | `start_route` weigert: `Service /get_route niet beschikbaar` | route_manager starten (stap 7) |
+| `route_draft/save`: `bestaat al` | Andere naam, of `overwrite: true` |
+| Geklikte pose komt niet in de concept-route | Display frame niet `map` (zie log route_manager), of verkeerd topic (`/route_draft/add_pose`) |
 | `start_route` weigert: `Onbekende route` | Naam staat niet in `routes.yaml` (de melding noemt de beschikbare routes) |
 | `start_route` weigert: `Kan niet starten in WAITING_OPERATOR` | Eerst `ros2 service call /cancel_mission std_srvs/srv/Trigger` |
-| Robot rijdt met de standaardboom i.p.v. de ziekenhuisboom | Gestart met **2D Goal Pose**, **Start Waypoint Following** of `navigate_to_pose`; gebruik **Start Nav Through Poses** of `start_route` |
+| Robot rijdt met de standaardboom i.p.v. de ziekenhuisboom | Gestart met `my_bot sim_nav.launch.py` i.p.v. `hospital_robot_bringup sim.launch.py` |
 | `navigation/blocked = true` zonder obstakel | Log van `controller_server`: `Failed to make progress` → robot schoot `progress_timeout_s` lang geen 0,5 m op |
 | bt_navigator start niet: `Could not load library` | Plugin staat in `plugin_lib_names` maar is niet gebouwd; bouwen of uit `nav2_params.yaml` halen |
 | `Node not recognized` in de boom | Plugin ontbreekt in `HOSPITAL_BT_PLUGINS` of in `plugin_lib_names` |

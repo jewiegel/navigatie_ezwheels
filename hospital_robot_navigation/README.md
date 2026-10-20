@@ -19,6 +19,11 @@
   of annuleren beëindigt het doel.
   Hoe dicht "bereikt" is, bepaalt `general_goal_checker` (`xy_goal_tolerance`,
   `yaw_goal_tolerance`) in de Nav2-parameters.
+- `behavior_trees/hospital_navigate_to_pose.xml.in` — NavigateToPose-boom (één doel,
+  `{goal}`): zelfde gedrag zonder de waypoint-lus. Plan elke seconde opnieuw naar
+  het doel (een nieuw doel tijdens het rijden wordt zo binnen een seconde
+  overgenomen) en volg tot het bereikt is; bij een blokkade dezelfde procedure.
+  Gebruikt door RViz **2D Goal Pose** en de waypoint_follower.
 - `check_bt_xml` — commandoregelprogramma (geen ROS-node) dat een BT-XML controleert
   tegen de nodetypes van opgegeven plugin-bibliotheken (`BT::VerifyXML`) en het
   nodemodel (poorten per type) op stdout zet. Zonder draaiende Nav2 te gebruiken.

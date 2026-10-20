@@ -8,6 +8,7 @@
   <license>Apache-2.0</license>
 
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
   <exec_depend>hospital_robot_bt_nodes</exec_depend>
   <exec_depend>hospital_robot_navigation</exec_depend>
   <exec_depend>launch</exec_depend>

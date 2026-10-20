@@ -7,6 +7,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Waypoint.msg"
   "srv/GetRoute.srv"
+  "srv/SaveRoute.srv"
   "srv/StartRoute.srv"
 )
 

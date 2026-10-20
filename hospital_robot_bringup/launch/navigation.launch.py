@@ -15,8 +15,9 @@
 """
 Start Nav2 (my_bot/navigation_launch.py) with the hospital behavior tree.
 
-Fills hospital_navigate.xml.in from config/timing.yaml, adds the hospital BT
-plugins to plugin_lib_names and sets the progress checker timeout.
+Fills the hospital tree templates (NavigateThroughPoses and NavigateToPose) from
+config/timing.yaml, adds the hospital BT plugins to plugin_lib_names and sets the
+progress checker timeout.
 """
 
 import os
@@ -38,21 +39,28 @@ HOSPITAL_BT_PLUGINS = [
     'hospital_robot_pop_waypoint_bt_node',
 ]
 
+# bt_navigator parameter -> template in hospital_robot_navigation/behavior_trees
+HOSPITAL_TREES = {
+    'default_nav_through_poses_bt_xml': 'hospital_navigate.xml.in',
+    'default_nav_to_pose_bt_xml': 'hospital_navigate_to_pose.xml.in',
+}
+
 
 def _prepare_nav2(context):
     timing = load_navigation_timing(LaunchConfiguration('timing_file').perform(context))
 
-    template_file = os.path.join(
-        get_package_share_directory('hospital_robot_navigation'),
-        'behavior_trees', 'hospital_navigate.xml.in')
-    with open(template_file) as f:
-        bt_xml = render_bt(f.read(), timing)
-    bt_file = write_temp(bt_xml, 'hospital_navigate_', '.xml')
+    tree_dir = os.path.join(
+        get_package_share_directory('hospital_robot_navigation'), 'behavior_trees')
+    bt_files = {}
+    for param, template in HOSPITAL_TREES.items():
+        with open(os.path.join(tree_dir, template)) as f:
+            bt_xml = render_bt(f.read(), timing)
+        bt_files[param] = write_temp(bt_xml, template.replace('.xml.in', '_'), '.xml')
 
     with open(LaunchConfiguration('params_file').perform(context)) as f:
         base_params = yaml.safe_load(f)
     params = nav2_params_with_hospital_bt(
-        base_params, bt_file, HOSPITAL_BT_PLUGINS, timing['progress_timeout_s'])
+        base_params, bt_files, HOSPITAL_BT_PLUGINS, timing['progress_timeout_s'])
     params_file = write_temp_yaml(params, 'hospital_nav2_params_')
 
     return [IncludeLaunchDescription(

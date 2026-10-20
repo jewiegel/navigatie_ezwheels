@@ -71,8 +71,36 @@ class YamlRouteRepository(RouteRepository):
         directory = os.path.dirname(os.path.abspath(self._path))
         os.makedirs(directory, exist_ok=True)
         with tempfile.NamedTemporaryFile('w', dir=directory, suffix='.tmp', delete=False) as f:
-            yaml.safe_dump({'routes': routes}, f, sort_keys=False)
+            f.write(self._header())
+            # default_flow_style=None: elk waypoint op één regel, zoals met de hand geschreven
+            yaml.safe_dump({'routes': routes}, f, sort_keys=False, default_flow_style=None)
+        self._copy_permissions(f.name)
         os.replace(f.name, self._path)
+
+    def _copy_permissions(self, tmp_path: str) -> None:
+        """Rechten en eigenaar van het oude bestand overnemen. Een tijdelijk bestand is
+        0600; draait de node als root (Docker), dan kan de gebruiker het anders niet meer lezen."""
+        if not os.path.exists(self._path):
+            os.chmod(tmp_path, 0o644)
+            return
+        st = os.stat(self._path)
+        os.chmod(tmp_path, st.st_mode & 0o777)
+        try:
+            os.chown(tmp_path, st.st_uid, st.st_gid)
+        except PermissionError:
+            pass  # alleen root mag chown; als gewone gebruiker is de eigenaar al goed
+
+    def _header(self) -> str:
+        """Commentaar bovenaan het bestand; yaml.safe_dump zou het anders weggooien."""
+        if not os.path.exists(self._path):
+            return ''
+        header = []
+        with open(self._path) as f:
+            for line in f:
+                if line.strip() and not line.lstrip().startswith('#'):
+                    break
+                header.append(line)
+        return ''.join(header)
 
 
 def _parse_route(name: str, entry) -> Route:

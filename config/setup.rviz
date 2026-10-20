@@ -253,6 +253,48 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /goal_pose
       Value: true
+    - Alpha: 1
+      Arrow Length: 0.5
+      Axes Length: 0.3
+      Axes Radius: 0.01
+      Class: rviz_default_plugins/PoseArray
+      Color: 255; 140; 0
+      Enabled: true
+      Head Length: 0.12
+      Head Radius: 0.08
+      Name: RouteDraft
+      Shaft Length: 0.35
+      Shaft Radius: 0.04
+      Shape: Arrow (3D)
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /route_draft/poses
+      Value: true
+    - Alpha: 1
+      Arrow Length: 0.5
+      Axes Length: 0.3
+      Axes Radius: 0.01
+      Class: rviz_default_plugins/PoseArray
+      Color: 0; 120; 255
+      Enabled: true
+      Head Length: 0.12
+      Head Radius: 0.08
+      Name: RoutePreview
+      Shaft Length: 0.35
+      Shaft Radius: 0.04
+      Shape: Arrow (3D)
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /route_preview
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
