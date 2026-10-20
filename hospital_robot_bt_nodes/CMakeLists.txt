@@ -14,6 +14,7 @@ find_package(ament_cmake REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(behaviortree_cpp_v3 REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 
@@ -42,9 +43,20 @@ ament_target_dependencies(hospital_robot_is_path_blocked_bt_node
   behaviortree_cpp_v3 nav2_msgs nav_msgs rclcpp)
 target_compile_definitions(hospital_robot_is_path_blocked_bt_node PRIVATE BT_PLUGIN_EXPORT)
 
+foreach(plugin get_next_waypoint pop_waypoint)
+  add_library(hospital_robot_${plugin}_bt_node SHARED src/${plugin}.cpp)
+  target_include_directories(hospital_robot_${plugin}_bt_node PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
+  ament_target_dependencies(hospital_robot_${plugin}_bt_node behaviortree_cpp_v3 geometry_msgs)
+  target_compile_definitions(hospital_robot_${plugin}_bt_node PRIVATE BT_PLUGIN_EXPORT)
+endforeach()
+
 set(bt_plugin_libs
   hospital_robot_publish_blocked_bt_node
-  hospital_robot_is_path_blocked_bt_node)
+  hospital_robot_is_path_blocked_bt_node
+  hospital_robot_get_next_waypoint_bt_node
+  hospital_robot_pop_waypoint_bt_node)
 
 install(TARGETS hospital_robot_path_block_check ${bt_plugin_libs}
   EXPORT export_${PROJECT_NAME}
@@ -66,9 +78,13 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_is_path_blocked test/test_is_path_blocked.cpp)
   target_link_libraries(test_is_path_blocked hospital_robot_is_path_blocked_bt_node)
+
+  ament_add_gtest(test_waypoint_nodes test/test_waypoint_nodes.cpp)
+  target_link_libraries(test_waypoint_nodes
+    hospital_robot_get_next_waypoint_bt_node hospital_robot_pop_waypoint_bt_node)
 endif()
 
 ament_export_include_directories(include/${PROJECT_NAME})
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(behaviortree_cpp_v3 nav2_msgs nav_msgs rclcpp std_msgs)
+ament_export_dependencies(behaviortree_cpp_v3 geometry_msgs nav2_msgs nav_msgs rclcpp std_msgs)
 ament_package()

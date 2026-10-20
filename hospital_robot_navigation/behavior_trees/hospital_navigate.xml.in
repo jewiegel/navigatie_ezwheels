@@ -2,32 +2,62 @@
   Hospital robot NavigateThroughPoses tree (Nav2 Iron, BehaviorTree.CPP v3).
   Based on nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml.
 
-  Template: ${blockade_wait_s} and ${blockade_retries} are filled in at launch
-  from hospital_robot_bringup/config/timing.yaml (navigation.*).
+  Template: ${blockade_wait_s} is filled in at launch from
+  hospital_robot_bringup/config/timing.yaml (navigation.*).
 
-  On a failed plan/follow the robot runs the blockade procedure: report
-  navigation/blocked=true, wait, clear both costmaps, report false, retry.
-  PublishBlocked only runs at the start and end of the procedure, never per tick.
+  The route is driven waypoint by waypoint: plan to the next waypoint only,
+  follow until the goal checker reports it reached, drop it and continue.
+  Planning through all poses at once makes the path fold back on itself at a
+  turn-around waypoint, which makes DWB oscillate before reaching it.
+
+  The tree never gives up: only finishing the route or cancelling the goal ends it.
+  If planning or following fails, the blockade procedure reports
+  navigation/blocked=true once, then repeats clear far-away costmap cells -> wait ->
+  plan to the current waypoint until a plan succeeds, and only then reports false
+  and resumes. The wait comes after clearing so the sensors can re-mark a remaining
+  obstacle before the check.
 -->
 <root main_tree_to_execute="HospitalNavigate">
   <BehaviorTree ID="HospitalNavigate">
-    <RecoveryNode number_of_retries="${blockade_retries}" name="BlockadeCounter">
-      <PipelineSequence name="NavigateWithReplanning">
-        <RateController hz="1.0">
-          <Sequence>
-            <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
-            <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased" error_code_id="{compute_path_error_code}"/>
+    <RetryUntilSuccessful num_attempts="-1" name="KeepNavigating">
+      <Fallback name="RouteOrBlockade">
+        <Fallback name="FollowRoute">
+          <KeepRunningUntilFailure>
+            <Sequence name="DriveToNextWaypoint">
+              <GetNextWaypoint goals="{goals}" goal="{goal}"/>
+              <PipelineSequence name="NavigateWithReplanning">
+                <RateController hz="1.0">
+                  <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased" error_code_id="{compute_path_error_code}"/>
+                </RateController>
+                <FollowPath path="{path}" controller_id="FollowPath" error_code_id="{follow_path_error_code}"/>
+              </PipelineSequence>
+              <PopWaypoint input_goals="{goals}" output_goals="{goals}"/>
+            </Sequence>
+          </KeepRunningUntilFailure>
+          <!-- The loop above only stops on failure: success if that was because no waypoints are left. -->
+          <Inverter>
+            <GetNextWaypoint goals="{goals}" goal="{goal}"/>
+          </Inverter>
+        </Fallback>
+        <!-- Always fails after the blockade is lifted, so KeepNavigating resumes the route. -->
+        <ForceFailure>
+          <Sequence name="BlockadeProcedure">
+            <PublishBlocked blocked="true"/>
+            <RetryUntilSuccessful num_attempts="-1" name="WaitUntilClear">
+              <Sequence>
+                <!-- Keep obstacles near the robot: the lidar has a blind spot behind it, so a
+                     full clear would forget a wall there and the plan would go through it. -->
+                <ClearCostmapExceptRegion name="ClearLocal" service_name="local_costmap/clear_except_local_costmap" reset_distance="3.0"/>
+                <ClearCostmapExceptRegion name="ClearGlobal" service_name="global_costmap/clear_except_global_costmap" reset_distance="3.0"/>
+                <Wait wait_duration="${blockade_wait_s}"/>
+                <GetNextWaypoint goals="{goals}" goal="{goal}"/>
+                <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased" error_code_id="{compute_path_error_code}"/>
+              </Sequence>
+            </RetryUntilSuccessful>
+            <PublishBlocked blocked="false"/>
           </Sequence>
-        </RateController>
-        <FollowPath path="{path}" controller_id="FollowPath" error_code_id="{follow_path_error_code}"/>
-      </PipelineSequence>
-      <Sequence name="BlockadeProcedure">
-        <PublishBlocked blocked="true"/>
-        <Wait wait_duration="${blockade_wait_s}"/>
-        <ClearEntireCostmap name="ClearLocal" service_name="local_costmap/clear_entirely_local_costmap"/>
-        <ClearEntireCostmap name="ClearGlobal" service_name="global_costmap/clear_entirely_global_costmap"/>
-        <PublishBlocked blocked="false"/>
-      </Sequence>
-    </RecoveryNode>
+        </ForceFailure>
+      </Fallback>
+    </RetryUntilSuccessful>
   </BehaviorTree>
 </root>

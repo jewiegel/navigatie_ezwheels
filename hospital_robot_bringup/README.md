@@ -12,7 +12,7 @@ Start Nav2 met de behavior tree van de ziekenhuisrobot.
 ## Wat de launch doet
 
 1. Leest `navigation.*` uit `timing.yaml`; ontbreekt een sleutel → harde fout.
-2. Vult `${blockade_wait_s}` en `${blockade_retries}` in; staat er daarna nog een
+2. Vult `${blockade_wait_s}` in; staat er daarna nog een
    `${` in de XML → harde fout met regelnummer. Resultaat in `/tmp/hospital_navigate_*.xml`.
 3. Maakt een kopie van het Nav2-parameterbestand met:
    - `bt_navigator.default_nav_through_poses_bt_xml` = de ingevulde boom;
@@ -37,8 +37,7 @@ ros2 topic echo navigation/blocked --qos-durability transient_local
 | `timing.yaml` | Betekenis |
 |---|---|
 | `navigation.progress_timeout_s` | progress checker: zoveel s zonder voortgang → FollowPath faalt |
-| `navigation.blockade_wait_s` | wachttijd in de blokkadeprocedure |
-| `navigation.blockade_retries` | aantal blokkadeprocedures voordat het doel faalt |
+| `navigation.blockade_wait_s` | tijd tussen twee checks of het pad weer vrij is tijdens een blokkade |
 
 ## Testen
 

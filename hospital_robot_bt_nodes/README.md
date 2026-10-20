@@ -7,6 +7,8 @@ Eigen BehaviorTree.CPP-plugins (v3, zoals Nav2 in ROS 2 Iron) voor de ziekenhuis
 | `hospital_robot_path_block_check` | `PathBlockCheck`: pure logica (alleen berichttypen) — loopt `lookahead_m` meter langs een `nav_msgs/Path` en kijkt of een cel in een `nav2_msgs/Costmap` `>= lethal_threshold` is. Punten buiten de costmap blokkeren niet; leeg pad of lege costmap = niet geblokkeerd. |
 | `hospital_robot_publish_blocked_bt_node` | BT-node `PublishBlocked` (SyncAction) |
 | `hospital_robot_is_path_blocked_bt_node` | BT-node `IsPathBlocked` (Condition) |
+| `hospital_robot_get_next_waypoint_bt_node` | BT-node `GetNextWaypoint` (SyncAction): `goals` → `goal` = eerste waypoint; `FAILURE` als de lijst leeg is |
+| `hospital_robot_pop_waypoint_bt_node` | BT-node `PopWaypoint` (SyncAction): `input_goals` → `output_goals` zonder het eerste (bereikte) waypoint |
 
 Beide BT-nodes halen de ROS-node uit het blackboard onder `"node"` (zoals Nav2).
 De plugins laad je via `bt_navigator.plugin_lib_names` met de namen uit de tabel.
@@ -45,4 +47,5 @@ colcon test-result --test-result-base build/hospital_robot_bt_nodes --verbose
 gtests: `test_path_block_check` (vrij pad, lethal binnen/net voorbij lookahead,
 pad deels buiten de costmap, leeg pad, lege costmap), `test_publish_blocked`
 (juiste waarde op het topic, ontbrekende/ongeldige poort), `test_is_path_blocked`
-(SUCCESS/FAILURE met een kunstmatige costmap, geen pad, geen costmap). Plus ament_lint.
+(SUCCESS/FAILURE met een kunstmatige costmap, geen pad, geen costmap),
+`test_waypoint_nodes` (volgende waypoint, lege lijst, verwijderen). Plus ament_lint.

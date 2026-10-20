@@ -24,12 +24,16 @@ from hospital_robot_bringup.bt_template import (
 import pytest
 import yaml
 
-TEST_VALUES = {'progress_timeout_s': 12.5, 'blockade_wait_s': 7.5, 'blockade_retries': 4}
+TEST_VALUES = {'progress_timeout_s': 12.5, 'blockade_wait_s': 7.5}
 HOSPITAL_PLUGINS = [
     'hospital_robot_publish_blocked_bt_node',
     'hospital_robot_is_path_blocked_bt_node',
+    'hospital_robot_get_next_waypoint_bt_node',
+    'hospital_robot_pop_waypoint_bt_node',
 ]
 GENERIC_ATTRIBUTES = {'name', 'ID'}
+# Built-in BehaviorTree.CPP nodes are not in the plugin model; their ports used in the tree:
+BUILTIN_PORTS = {'RetryUntilSuccessful': {'num_attempts'}}
 
 
 def _template():
@@ -50,13 +54,14 @@ def test_render_fills_all_placeholders():
     rendered = render_bt(_template(), TEST_VALUES)
     assert '${' not in rendered
     root = ET.fromstring(rendered)
-    assert root.find('.//RecoveryNode[@name="BlockadeCounter"]').get('number_of_retries') == '4'
     assert root.find('.//Wait').get('wait_duration') == '7.5'
+    # Never gives up: every retry loop is infinite.
+    assert {n.get('num_attempts') for n in root.iter('RetryUntilSuccessful')} == {'-1'}
 
 
 def test_render_fails_on_missing_key():
-    with pytest.raises(KeyError, match='blockade_retries'):
-        render_bt(_template(), {'blockade_wait_s': 1.0})
+    with pytest.raises(KeyError, match='blockade_wait_s'):
+        render_bt(_template(), {'progress_timeout_s': 1.0})
 
 
 def test_render_fails_on_leftover_placeholder():
@@ -66,8 +71,8 @@ def test_render_fails_on_leftover_placeholder():
 
 def test_timing_file_missing_key(tmp_path):
     timing = tmp_path / 'timing.yaml'
-    timing.write_text('navigation:\n  blockade_wait_s: 1.0\n')
-    with pytest.raises(KeyError, match='progress_timeout_s, blockade_retries'):
+    timing.write_text('navigation:\n  progress_timeout_s: 1.0\n')
+    with pytest.raises(KeyError, match='blockade_wait_s'):
         load_navigation_timing(str(timing))
 
 
@@ -111,5 +116,6 @@ def test_tree_uses_only_registered_nodes_and_ports(tmp_path):
     for element in tree.iter():
         if element is tree:
             continue
-        unknown = set(element.attrib) - GENERIC_ATTRIBUTES - ports.get(element.tag, set())
+        known = ports.get(element.tag, BUILTIN_PORTS.get(element.tag, set()))
+        unknown = set(element.attrib) - GENERIC_ATTRIBUTES - known
         assert not unknown, f'<{element.tag}> has unknown port(s): {sorted(unknown)}'

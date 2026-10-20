@@ -34,6 +34,8 @@ import yaml
 HOSPITAL_BT_PLUGINS = [
     'hospital_robot_publish_blocked_bt_node',
     'hospital_robot_is_path_blocked_bt_node',
+    'hospital_robot_get_next_waypoint_bt_node',
+    'hospital_robot_pop_waypoint_bt_node',
 ]
 
 

@@ -21,7 +21,7 @@ import tempfile
 import yaml
 
 PLACEHOLDER = re.compile(r'\$\{(\w+)\}')
-NAVIGATION_KEYS = ('progress_timeout_s', 'blockade_wait_s', 'blockade_retries')
+NAVIGATION_KEYS = ('progress_timeout_s', 'blockade_wait_s')
 
 
 def load_navigation_timing(timing_file):
