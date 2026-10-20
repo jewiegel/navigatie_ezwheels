@@ -13,9 +13,8 @@ def generate_launch_description():
 
         Node(
             package='my_bot',
-            executable='patrol_node.py',
-            name='patrol_node',
-            parameters=[os.path.join(pkg, 'config', 'patrol_params.yaml')],
+            executable='MissionManagerNode.py',
+            name='mission_manager',
             output='screen',
             on_exit=Shutdown(),
         ),

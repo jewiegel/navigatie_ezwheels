@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import Command
+from .Command import Command
+
 
 class CancelGoalCommand(Command):
 
-    def execute(poses):
-        pass
+    def execute(self, ports):
+        ports.nav.cancel()

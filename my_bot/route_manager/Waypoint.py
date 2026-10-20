@@ -2,7 +2,7 @@
 
 class Waypoint():
 
-    def __init__(self, name, x, y, yaw):
+    def __init__(self, name: str, x: float, y: float, yaw: float):
         self.name = name
         self.x = x
         self.y = y
