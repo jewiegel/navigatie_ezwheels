@@ -1,0 +1,33 @@
+<!--
+  Hospital robot NavigateThroughPoses tree (Nav2 Iron, BehaviorTree.CPP v3).
+  Based on nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml.
+
+  Template: ${blockade_wait_s} and ${blockade_retries} are filled in at launch
+  from hospital_robot_bringup/config/timing.yaml (navigation.*).
+
+  On a failed plan/follow the robot runs the blockade procedure: report
+  navigation/blocked=true, wait, clear both costmaps, report false, retry.
+  PublishBlocked only runs at the start and end of the procedure, never per tick.
+-->
+<root main_tree_to_execute="HospitalNavigate">
+  <BehaviorTree ID="HospitalNavigate">
+    <RecoveryNode number_of_retries="${blockade_retries}" name="BlockadeCounter">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="1.0">
+          <Sequence>
+            <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+            <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased" error_code_id="{compute_path_error_code}"/>
+          </Sequence>
+        </RateController>
+        <FollowPath path="{path}" controller_id="FollowPath" error_code_id="{follow_path_error_code}"/>
+      </PipelineSequence>
+      <Sequence name="BlockadeProcedure">
+        <PublishBlocked blocked="true"/>
+        <Wait wait_duration="${blockade_wait_s}"/>
+        <ClearEntireCostmap name="ClearLocal" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobal" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <PublishBlocked blocked="false"/>
+      </Sequence>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
