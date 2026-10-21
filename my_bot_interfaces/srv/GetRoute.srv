@@ -1,0 +1,7 @@
+# Route opvragen bij de route_manager.
+string name
+---
+bool success
+string message
+string map_id
+my_bot_interfaces/Waypoint[] waypoints

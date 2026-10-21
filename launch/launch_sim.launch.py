@@ -56,7 +56,7 @@ def generate_launch_description():
         arguments=[
             '/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock',
             '/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist',
-            '/scan@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
+            '/laser_1/scan_filtered@sensor_msgs/msg/LaserScan[ignition.msgs.LaserScan',
             '/odom@nav_msgs/msg/Odometry[ignition.msgs.Odometry',
             '/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V',
             '/joint_states@sensor_msgs/msg/JointState[ignition.msgs.Model',

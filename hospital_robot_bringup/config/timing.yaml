@@ -1,0 +1,4 @@
+# Timing of the hospital robot. Read at launch by hospital_robot_bringup.
+navigation:
+  progress_timeout_s: 10.0   # controller_server progress checker: movement_time_allowance
+  blockade_wait_s: 10.0      # BT blockade procedure: wait after clearing costmaps before checking for a free path

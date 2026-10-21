@@ -1,0 +1,5 @@
+# Route starten via de MissionManagerNode.
+string route_name
+---
+bool accepted
+string message

@@ -38,18 +38,18 @@ install(
 )
 
 install(PROGRAMS
-  my_bot/patrol_node.py
+  my_bot/MissionManagerNode.py
+  my_bot/RouteManagerServer.py
   my_bot/indicator_node.py
   my_bot/environment_speed_node.py
   my_bot/mqtt_hmi_bridge.py
   my_bot/test_indicators.py
-  my_bot/nav2_test_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Patrouille-logica van patrol_node (import: from patrol import ...)
+# Packages van MissionManagerNode en RouteManagerServer (import: from mission_manager import ...)
 install(
-  DIRECTORY my_bot/patrol
+  DIRECTORY my_bot/mission_manager my_bot/route_manager
   DESTINATION lib/${PROJECT_NAME}
   PATTERN "__pycache__" EXCLUDE
 )
