@@ -20,7 +20,7 @@ Starts AMCL on the given map, Nav2 with the hospital behavior trees
 MissionManagerNode and optionally the foxglove_bridge.
 
 Expects the robot platform (EZ-Wheel / EZ-Way) to provide the hardware side:
-lidar on /laser_1/scan_filtered, /odom, TF odom -> base_footprint -> base_link and
+lidar on /laser_1/scan_filtered, /odom, TF odom -> base_link -> laser_1 and
 a driver listening on /cmd_vel. The EZ-Way navigation ("automatic mode") must not
 run at the same time: it cannot load the hospital BT plugins.
 """

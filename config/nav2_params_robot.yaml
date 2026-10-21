@@ -11,7 +11,7 @@ amcl:
     initial_pose_y: 0.0
     initial_pose_z: 0.0
     initial_pose_yaw: 0.0
-    base_frame_id: "base_footprint"
+    base_frame_id: "base_link"
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
