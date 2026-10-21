@@ -52,6 +52,8 @@ class TestFindTurn(unittest.TestCase):
         self.assertEqual(turn.direction, LEFT)
         self.assertAlmostEqual(turn.distance, 1.5, delta=0.5)
         self.assertAlmostEqual(math.degrees(turn.angle), 90, delta=10)
+        self.assertAlmostEqual(turn.point[0], 1.5, delta=0.5)   # bochtpunt op het pad
+        self.assertAlmostEqual(turn.point[1], 0.0, delta=0.3)
 
     def test_bocht_rechts_op_rooster(self):
         turn = find_turn(grid(corner(2.0, -90)), 3.0, TURN)

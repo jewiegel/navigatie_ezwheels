@@ -295,6 +295,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /route_preview
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: TurnMarkers
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /turn_markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

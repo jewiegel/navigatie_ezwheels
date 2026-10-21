@@ -477,6 +477,13 @@ op `turn` (`my_bot_interfaces/msg/Turn`, 5 Hz), bedoeld voor een signal_manager
 ros2 topic echo /turn
 ```
 
+Zien wat hij herkent: `turn_markers` (MarkerArray). In RViz staat het display
+**TurnMarkers** al aan; in Foxglove zet je `/turn_markers` aan in het 3D-panel.
+
+- Oranje knipperend bolletje links- of rechtsvoor op de robot: komende bocht of
+  draaien naar die kant.
+- Oranje bol met tekst (bv. `RECHTS 2.8 m`) op het pad: waar de bocht begint.
+
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
 Deze nodes luisteren nog naar de topics van de oude `patrol_node`

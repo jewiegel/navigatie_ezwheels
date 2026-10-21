@@ -16,6 +16,7 @@ class UpcomingTurn:
     direction: int    # LEFT of RIGHT
     distance: float   # m langs het pad tot de bocht begint
     angle: float      # rad, + = links
+    point: Point      # waar de bocht begint, in het frame van het pad
 
 
 def find_turn(points: Sequence[Point], lookahead_m: float, turn_angle: float,
@@ -48,7 +49,8 @@ def find_turn(points: Sequence[Point], lookahead_m: float, turn_angle: float,
             # Totale draaiing: de grootste afwijking binnen het bekeken stuk.
             angle = max((_wrap(h - headings[0]) for h in headings[i:]),
                         key=abs, default=deviation)
-            return UpcomingTurn(LEFT if angle > 0 else RIGHT, max(distance, 0.0), angle)
+            return UpcomingTurn(LEFT if angle > 0 else RIGHT, max(distance, 0.0), angle,
+                                samples[start_index])
     return None
 
 
