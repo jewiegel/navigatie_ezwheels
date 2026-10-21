@@ -450,6 +450,33 @@ routes:
   Een fout in het bestand (bv. ontbrekende `yaw`) geeft bij `start_route` een
   melding met route en waypointnummer.
 
+### turn_detector: bochten op tijd herkennen
+
+`TurnDetectorNode.py` (start mee met `sim.launch.py` en `robot.launch.py`) publiceert
+op `turn` (`my_bot_interfaces/msg/Turn`, 5 Hz), bedoeld voor een signal_manager
+(knipperlichten):
+
+| Veld | Betekenis |
+|---|---|
+| `direction` | komende bocht volgens het pad: `NONE` (0), `LEFT` (1), `RIGHT` (2) |
+| `distance` | m tot de bocht begint |
+| `angle` | rad, hoeveel de bocht draait (+ = links) |
+| `turning` | draait de robot nu (gemeten via `/odom`): `NONE`, `LEFT`, `RIGHT` |
+
+- Kijkt `lookahead_m` (3 m) vooruit in `/plan`; een richtingsverandering van
+  ≥ `turn_angle_deg` (30°) telt als bocht.
+- Omdat Nav2 per waypoint plant, plakt hij de volgende waypoints van de gestarte
+  route (`route_preview`) achter het pad: zo ziet hij ook de bocht **bij** een
+  waypoint op tijd.
+- Een bocht in de laatste ~0,5 m voor de robot meldt hij niet meer als "komend";
+  dan is `turning` het signaal. Laat een knipperlicht in de signal_manager dus
+  even nabranden.
+- Bij elke verandering logt hij een regel, bv. `bocht RECHTS over 2.8 m (-31°)`.
+
+```bash
+ros2 topic echo /turn
+```
+
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
 Deze nodes luisteren nog naar de topics van de oude `patrol_node`

@@ -83,5 +83,8 @@ def generate_launch_description():
             Node(
                 package='my_bot', executable='MissionManagerNode.py', name='mission_manager',
                 output='screen', parameters=[{'use_sim_time': True}]),
+            Node(
+                package='my_bot', executable='TurnDetectorNode.py', name='turn_detector',
+                output='screen', parameters=[{'use_sim_time': True}]),
         ]),
     ])
