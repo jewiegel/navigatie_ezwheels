@@ -29,7 +29,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-# Gazebo needs a few seconds before /clock, /scan and /tf exist; earlier gives TF errors.
+# Gazebo needs a few seconds before /clock, the lidar and /tf exist; earlier gives TF errors.
 NAV_START_DELAY_S = 8.0
 
 

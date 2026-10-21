@@ -33,7 +33,7 @@ def generate_launch_description():
              arguments=['-d', os.path.join(pkg, 'config', 'setup.rviz')],
              parameters=[{'use_sim_time': True}], output='log'),
 
-        # Wachten tot Gazebo /clock, /scan en /tf publiceert, anders TF-fouten bij opstarten.
+        # Wachten tot Gazebo /clock, /laser_1/scan_filtered en /tf publiceert, anders TF-fouten bij opstarten.
         TimerAction(period=8.0, actions=[
             include('localization_launch.py', {'map': LaunchConfiguration('map')},
                     condition=UnlessCondition(slam)),

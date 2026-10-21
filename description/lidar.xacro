@@ -24,7 +24,7 @@
     <ignition_frame_id>laser_link</ignition_frame_id>
       <pose>0 0 0 0 0 0</pose>
        <always_on>1</always_on>
-      <topic>/scan</topic>
+      <topic>/laser_1/scan_filtered</topic>
       <visualize>false</visualize>
       <update_rate>10</update_rate>
       <lidar>

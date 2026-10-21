@@ -116,6 +116,12 @@ De pakketten:
 
 ## 3. Simulatie met de ziekenhuis-behavior tree
 
+> De simulatierobot gebruikt dezelfde topics als de echte robot: lidar op
+> `/laser_1/scan_filtered`, odometrie op `/odom`, besturing via `/cmd_vel`, frames
+> `odom → base_footprint → base_link`. Verschil tussen `config/nav2_params.yaml`
+> (simulatie) en `config/nav2_params_robot.yaml`: alleen `inflation_radius`
+> (0,55 / 0,80 m) en `use_sim_time`.
+
 ```bash
 ros2 launch hospital_robot_bringup sim.launch.py
 ```
@@ -220,8 +226,8 @@ ros2 launch my_bot sim_nav.launch.py slam:=true      # idem, met SLAM i.p.v. AMC
 Controleren of de simulatie draait:
 
 ```bash
-ros2 topic list            # /scan, /odom, /clock, /tf moeten er staan
-ros2 topic hz /scan        # lidar publiceert?
+ros2 topic list                           # /laser_1/scan_filtered, /odom, /clock, /tf moeten er staan
+ros2 topic hz /laser_1/scan_filtered      # lidar publiceert?
 ```
 
 ---
