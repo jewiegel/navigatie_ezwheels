@@ -489,6 +489,36 @@ Zien wat hij herkent: `turn_markers` (MarkerArray). In RViz staat het display
   draaien naar die kant.
 - Oranje bol met tekst (bv. `RECHTS 2.8 m`) op het pad: waar de bocht begint.
 
+### signal_manager: knipperlichten en buzzer
+
+`SignalManagerNode.py` (start mee met `sim.launch.py` en `robot.launch.py`):
+sources → `RobotFacts` → actuators → uitgangen (`my_bot/signal_manager/`).
+
+| Source | Topic | Feit |
+|---|---|---|
+| `TurnSource` | `/turn` | `turn`: komende bocht, anders draaien. Niet vers na `turn_timeout_s` (1 s) |
+| `RobotStateSource` | `/mission_status` | `mode`: `IDLE`, `DRIVING`, `BLOCKED`, `WAITING_OPERATOR`, `ARRIVED`, `ERROR` |
+| `CollisionStateSource` | `navigation/blocked` | `collision`: `NONE` / `BLOCKED` |
+
+| Actuator | Gedrag | Uitgang |
+|---|---|---|
+| `Blinkers` | `gevaar` bij blokkade, `WAITING_OPERATOR`/`ERROR`, of tijdens `DRIVING` een source die niet vers is; anders `links`/`rechts` bij een bocht (brandt `hold_s` = 1 s na); anders `uit` | `/indicators` (bij verandering) |
+| `Horn` | kort bij vertrek, aankomst en begin blokkade; dubbel bij `WAITING_OPERATOR`/`ERROR` | `/buzzer` (`true`/`false`) |
+
+`mqtt_hmi_bridge` zet `/indicators` en `/buzzer` om naar MQTT (`robot/outputs/lamp_links`,
+`lamp_rechts`, `buzzer`). De actuators bepalen alleen hun toestand; het versturen zit in
+de node, zodat dat later direct via MQTT kan.
+
+```bash
+ros2 topic echo /indicators
+ros2 topic echo /buzzer std_msgs/msg/Bool
+```
+
+Vertrek- en aankomstpiep komen van `/mission_status`, dus alleen bij `start_route`
+(MissionManager), niet bij een route vanuit het RViz-paneel.
+
+> Start `indicator_node.py` niet tegelijk: die publiceert op dezelfde topics.
+
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
 Deze nodes luisteren nog naar de topics van de oude `patrol_node`

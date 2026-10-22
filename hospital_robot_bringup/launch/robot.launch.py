@@ -17,7 +17,7 @@ Real robot: hospital navigation stack without Gazebo and RViz.
 
 Starts AMCL on the given map, Nav2 with the hospital behavior trees
 (navigation.launch.py, config/nav2_params_robot.yaml), the route_manager, the
-MissionManagerNode and optionally the foxglove_bridge.
+MissionManagerNode, the turn_detector, the signal_manager and optionally the foxglove_bridge.
 
 Expects the robot platform (EZ-Wheel / EZ-Way) to provide the hardware side:
 lidar on /laser_1/scan_filtered, /odom, TF odom -> base_link -> laser_1 and
@@ -80,6 +80,9 @@ def generate_launch_description():
             output='screen'),
         Node(
             package='my_bot', executable='TurnDetectorNode.py', name='turn_detector',
+            output='screen'),
+        Node(
+            package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
             output='screen'),
         Node(
             package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
