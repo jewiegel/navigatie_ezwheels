@@ -468,9 +468,10 @@ op `turn` (`my_bot_interfaces/msg/Turn`, 5 Hz), bedoeld voor een signal_manager
 - Omdat Nav2 per waypoint plant, plakt hij de volgende waypoints van de gestarte
   route (`route_preview`) achter het pad: zo ziet hij ook de bocht **bij** een
   waypoint op tijd.
-- Een bocht in de laatste ~0,5 m voor de robot meldt hij niet meer als "komend";
-  dan is `turning` het signaal. Laat een knipperlicht in de signal_manager dus
-  even nabranden.
+- De bocht wordt gemeten ten opzichte van de rijrichting van de robot (TF
+  `map → base_link`), dus ook vlak voor het waypoint blijft hij gemeld tot de robot
+  draait (`turning`). Zonder TF valt hij terug op het eerste stuk pad en mist hij
+  een bocht in de laatste ~0,5 m.
 - Bij elke verandering logt hij een regel, bv. `bocht RECHTS over 2.8 m (-31°)`.
 
 ```bash

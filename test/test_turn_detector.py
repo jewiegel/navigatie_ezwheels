@@ -72,10 +72,21 @@ class TestFindTurn(unittest.TestCase):
         self.assertEqual(turn.direction, RIGHT)
         self.assertLess(turn.distance, 1.0)
 
-    def test_bocht_binnen_eerste_stap_niet_als_komend(self):
-        # Bekende beperking: het eerste stuk is de referentie. Die bocht is eerder al
-        # gemeld en het draaien zelf zie je via turning_direction (odometrie).
+    def test_bocht_binnen_eerste_stap_alleen_met_robotrichting(self):
+        # Vlak voor het waypoint: zonder robotrichting is het eerste stuk al de bocht.
         self.assertIsNone(find_turn(corner(0.1, -90), 3.0, TURN))
+        turn = find_turn(corner(0.1, -90), 3.0, TURN, heading=0.0)
+        self.assertEqual(turn.direction, RIGHT)
+        self.assertEqual(turn.distance, 0.0)
+        self.assertAlmostEqual(math.degrees(turn.angle), -90, delta=10)
+
+    def test_robotrichting_zelfde_afstand_als_zonder(self):
+        turn = find_turn(corner(1.5, 90), 3.0, TURN, heading=0.0)
+        self.assertAlmostEqual(turn.distance, find_turn(corner(1.5, 90), 3.0, TURN).distance)
+
+    def test_robotrichting_recht_pad_geen_bocht(self):
+        self.assertIsNone(find_turn(grid(line(0, 0, 20, 5)), 3.0, TURN,
+                                    heading=math.radians(25)))
 
     def test_te_kort_of_leeg_pad(self):
         self.assertIsNone(find_turn([], 3.0, TURN))
@@ -87,24 +98,30 @@ class TestExtendWithRoute(unittest.TestCase):
     ROUTE = [(2.0, 0.0), (2.0, 3.0), (5.0, 3.0)]
 
     def test_bocht_bij_waypoint_wordt_zichtbaar(self):
-        plan = line(0, 0, 0, 2.0)                  # eindigt op waypoint 1, recht
+        plan = line(0, 0, 0, 2.0)                  # naar waypoint 0, recht
         self.assertIsNone(find_turn(plan, 3.0, TURN))
-        turn = find_turn(extend_with_route(plan, self.ROUTE), 3.0, TURN)
+        turn = find_turn(extend_with_route(plan, self.ROUTE, 3), 3.0, TURN)
         self.assertEqual(turn.direction, LEFT)
         self.assertAlmostEqual(turn.distance, 2.0, delta=0.5)
 
-    def test_pad_niet_op_waypoint_blijft_gelijk(self):
-        plan = line(0, 0, 0, 1.0)
-        self.assertEqual(extend_with_route(plan, self.ROUTE), plan)
+    def test_route_langs_zelfde_punt_twee_keer(self):
+        # Heen en terug door de gang: (2, 0) komt twee keer voor; op positie matchen gaf de
+        # vervolgwaypoints van het eerste bezoek (keren) i.p.v. de bocht erna.
+        route = [(2.0, 0.0), (6.0, 0.0), (2.0, 0.0), (2.0, -3.0)]
+        plan = line(6.0, 0.0, 180, 4.0)            # terug naar (2, 0), het tweede bezoek
+        turn = find_turn(extend_with_route(plan, route, 2), 5.0, TURN)
+        self.assertEqual(turn.direction, LEFT)     # rijdt richting -x, dan -y: linksaf
+        self.assertEqual(extend_with_route(plan, route, 2)[-1], (2.0, -3.0))
 
     def test_laatste_waypoint_niets_erachter(self):
-        plan = line(5.0, 0.0, 90, 3.0)             # eindigt op (5, 3)
-        self.assertEqual(extend_with_route(plan, self.ROUTE), plan)
+        plan = line(5.0, 0.0, 90, 3.0)
+        self.assertEqual(extend_with_route(plan, self.ROUTE, 1), plan)
 
-    def test_geen_route_of_pad(self):
-        self.assertEqual(extend_with_route([], self.ROUTE), [])
+    def test_onbekend_aantal_of_leeg(self):
         plan = line(0, 0, 0, 2.0)
-        self.assertEqual(extend_with_route(plan, []), plan)
+        self.assertEqual(extend_with_route(plan, self.ROUTE, 0), plan)    # geen feedback
+        self.assertEqual(extend_with_route(plan, self.ROUTE, 9), plan)    # andere route
+        self.assertEqual(extend_with_route([], self.ROUTE, 3), [])
 
 
 class TestTurningDirection(unittest.TestCase):

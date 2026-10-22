@@ -20,25 +20,25 @@ class UpcomingTurn:
 
 
 def find_turn(points: Sequence[Point], lookahead_m: float, turn_angle: float,
-              step_m: float = 0.5) -> Optional[UpcomingTurn]:
+              step_m: float = 0.5, heading: Optional[float] = None) -> Optional[UpcomingTurn]:
     """Zoek de eerste bocht van minstens turn_angle (rad) binnen lookahead_m langs het pad.
 
     Het pad begint bij de robot. Het wordt eerst bemonsterd om de step_m meter: Nav2-paden
     liggen op het rooster van de costmap en trappen anders bij elke cel een paar graden.
-    De richting van het eerste stuk is de referentie. De bocht begint waar de richting
-    voor het eerst de helft van turn_angle afwijkt.
-
-    shortcut: een bocht binnen de eerste step_m wordt niet gezien (het eerste stuk is de
-    referentie); geef de robotrichting mee als dat nodig blijkt.
+    De referentie is heading (rijrichting van de robot, rad, frame van het pad), of anders
+    de richting van het eerste stuk. De bocht begint waar de richting voor het eerst de
+    helft van turn_angle afwijkt. Zonder heading wordt een bocht binnen de eerste step_m
+    niet gezien: vlak voor een waypoint loopt dat eerste stuk de bocht al in.
     """
     samples = _resample(points, step_m, lookahead_m + step_m)
     headings = [math.atan2(b[1] - a[1], b[0] - a[0]) for a, b in zip(samples, samples[1:])]
     if len(headings) < 2:
         return None
+    reference = headings[0] if heading is None else heading
 
     start_index = None
-    for i, heading in enumerate(headings):
-        deviation = _wrap(heading - headings[0])
+    for i, h in enumerate(headings):
+        deviation = _wrap(h - reference)
         if start_index is None and abs(deviation) >= turn_angle / 2:
             start_index = i
         if abs(deviation) >= turn_angle:
@@ -47,7 +47,7 @@ def find_turn(points: Sequence[Point], lookahead_m: float, turn_angle: float,
             if distance > lookahead_m:
                 return None
             # Totale draaiing: de grootste afwijking binnen het bekeken stuk.
-            angle = max((_wrap(h - headings[0]) for h in headings[i:]),
+            angle = max((_wrap(h - reference) for h in headings[i:]),
                         key=abs, default=deviation)
             return UpcomingTurn(LEFT if angle > 0 else RIGHT, max(distance, 0.0), angle,
                                 samples[start_index])
@@ -55,19 +55,17 @@ def find_turn(points: Sequence[Point], lookahead_m: float, turn_angle: float,
 
 
 def extend_with_route(plan: Sequence[Point], route: Sequence[Point],
-                      tolerance_m: float = 0.3) -> list:
-    """Plak de route na het waypoint waar het pad eindigt erachter.
+                      remaining: int) -> list:
+    """Plak de waypoints na het huidige doel achter het pad.
 
     Nav2 plant per waypoint, dus een bocht bij een waypoint staat nooit in het pad zelf.
-    Eindigt het pad op een waypoint van de route, dan volgen de volgende waypoints.
+    remaining is number_of_poses_remaining uit de Nav2-feedback (inclusief het huidige
+    doel), dus het doel is route[-remaining]. Niet op positie matchen: een route die
+    twee keer langs hetzelfde punt komt, gaf dan de verkeerde vervolgwaypoints.
     """
-    if not plan:
+    if not plan or not 0 < remaining <= len(route):
         return list(plan)
-    end = plan[-1]
-    for i, wp in enumerate(route):
-        if math.hypot(wp[0] - end[0], wp[1] - end[1]) <= tolerance_m:
-            return list(plan) + list(route[i + 1:])
-    return list(plan)
+    return list(plan) + list(route[len(route) - remaining + 1:])
 
 
 def turning_direction(angular_z: float, turn_rate: float) -> int:
