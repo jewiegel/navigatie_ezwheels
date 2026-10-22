@@ -95,33 +95,33 @@ class TestFindTurn(unittest.TestCase):
 
 class TestExtendWithRoute(unittest.TestCase):
 
-    ROUTE = [(2.0, 0.0), (2.0, 3.0), (5.0, 3.0)]
+    WAYPOINTS = [(2.0, 0.0), (2.0, 3.0), (5.0, 3.0)]   # huidig doel eerst
 
     def test_bocht_bij_waypoint_wordt_zichtbaar(self):
-        plan = line(0, 0, 0, 2.0)                  # naar waypoint 0, recht
+        plan = line(0, 0, 0, 2.0)                  # naar het huidige doel, recht
         self.assertIsNone(find_turn(plan, 3.0, TURN))
-        turn = find_turn(extend_with_route(plan, self.ROUTE, 3), 3.0, TURN)
+        turn = find_turn(extend_with_route(plan, self.WAYPOINTS), 3.0, TURN)
         self.assertEqual(turn.direction, LEFT)
         self.assertAlmostEqual(turn.distance, 2.0, delta=0.5)
 
     def test_route_langs_zelfde_punt_twee_keer(self):
-        # Heen en terug door de gang: (2, 0) komt twee keer voor; op positie matchen gaf de
-        # vervolgwaypoints van het eerste bezoek (keren) i.p.v. de bocht erna.
-        route = [(2.0, 0.0), (6.0, 0.0), (2.0, 0.0), (2.0, -3.0)]
-        plan = line(6.0, 0.0, 180, 4.0)            # terug naar (2, 0), het tweede bezoek
-        turn = find_turn(extend_with_route(plan, route, 2), 5.0, TURN)
+        # Heen en terug door de gang: (2, 0) komt twee keer voor; de lijst bevat alleen
+        # wat nog komt, dus het tweede bezoek is het huidige doel.
+        remaining = [(2.0, 0.0), (2.0, -3.0)]
+        plan = line(6.0, 0.0, 180, 4.0)
+        turn = find_turn(extend_with_route(plan, remaining), 5.0, TURN)
         self.assertEqual(turn.direction, LEFT)     # rijdt richting -x, dan -y: linksaf
-        self.assertEqual(extend_with_route(plan, route, 2)[-1], (2.0, -3.0))
 
-    def test_laatste_waypoint_niets_erachter(self):
-        plan = line(5.0, 0.0, 90, 3.0)
-        self.assertEqual(extend_with_route(plan, self.ROUTE, 1), plan)
+    def test_pad_naar_ander_doel_blijft_gelijk(self):
+        # Oude lijst van een geannuleerde route, nu een los doel elders.
+        plan = line(0, 0, 0, 1.0)
+        self.assertEqual(extend_with_route(plan, self.WAYPOINTS), plan)
 
-    def test_onbekend_aantal_of_leeg(self):
-        plan = line(0, 0, 0, 2.0)
-        self.assertEqual(extend_with_route(plan, self.ROUTE, 0), plan)    # geen feedback
-        self.assertEqual(extend_with_route(plan, self.ROUTE, 9), plan)    # andere route
-        self.assertEqual(extend_with_route([], self.ROUTE, 3), [])
+    def test_laatste_waypoint_of_leeg(self):
+        plan = line(5.0, 0.0, 90, 3.0)             # eindigt op (5, 3)
+        self.assertEqual(extend_with_route(plan, [(5.0, 3.0)]), plan)
+        self.assertEqual(extend_with_route(plan, []), plan)
+        self.assertEqual(extend_with_route([], self.WAYPOINTS), [])
 
 
 class TestTurningDirection(unittest.TestCase):

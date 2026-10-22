@@ -6,10 +6,9 @@ Interface:
   sub  odom  (nav_msgs/Odometry)        gemeten draaisnelheid
   tf   <frame van plan> -> base_link     rijrichting: referentie voor de bocht, zodat ook
        een bocht vlak voor de robot (net voor een waypoint) gezien wordt
-  sub  route_preview (geometry_msgs/PoseArray)  gestarte route (route_manager): bochten
-       bij waypoints, want Nav2 plant per waypoint en het pad eindigt daar
-  sub  navigate_through_poses/_action/feedback  aantal resterende waypoints = welk
-       waypoint het huidige doel is
+  sub  remaining_waypoints (geometry_msgs/PoseArray)  resterende waypoints, huidig doel
+       eerst (GetNextWaypoint in de ziekenhuis-BT): bochten bij waypoints, want Nav2 plant
+       per waypoint en het pad eindigt daar. Werkt hoe de route ook gestart is.
   pub  turn  (my_bot_interfaces/Turn)   komende bocht + huidige draai, met rate_hz
   pub  turn_markers (visualization_msgs/MarkerArray)  voor RViz/Foxglove: knipperlichten
        op de robot en het bochtpunt op het pad
@@ -26,7 +25,6 @@ import math
 import rclpy
 from builtin_interfaces.msg import Duration
 from geometry_msgs.msg import PoseArray
-from nav2_msgs.action import NavigateThroughPoses
 from nav_msgs.msg import Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -61,8 +59,7 @@ class TurnDetectorNode(Node):
         self._plan_time = None       # ontvangsttijd van het laatste pad
         self._plan_frame = 'map'
         self._turning = NONE
-        self._route = []             # waypoints (x, y) van de gestarte route
-        self._remaining = 0          # waypoints nog te gaan incl. huidig doel (Nav2-feedback)
+        self._waypoints = []         # resterende waypoints (x, y), huidig doel eerst
         self._last_logged = (NONE, NONE)
 
         self.tf_buffer = Buffer()
@@ -70,11 +67,8 @@ class TurnDetectorNode(Node):
         self.create_subscription(Path, 'plan', self.on_plan, 10)
         self.create_subscription(Odometry, 'odom', self.on_odom, 10)
         self.create_subscription(
-            PoseArray, 'route_preview', self.on_route,
+            PoseArray, 'remaining_waypoints', self.on_waypoints,
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
-        self.create_subscription(
-            NavigateThroughPoses.Impl.FeedbackMessage,
-            'navigate_through_poses/_action/feedback', self.on_nav_feedback, 10)
         self.turn_pub = self.create_publisher(Turn, 'turn', 10)
         self.marker_pub = self.create_publisher(MarkerArray, 'turn_markers', 10)
         self.create_timer(1.0 / rate_hz, self.publish_turn)
@@ -84,7 +78,7 @@ class TurnDetectorNode(Node):
 
     def on_plan(self, msg: Path):
         points = [(p.pose.position.x, p.pose.position.y) for p in msg.poses]
-        points = extend_with_route(points, self._route, self._remaining)
+        points = extend_with_route(points, self._waypoints)
         self._plan_frame = msg.header.frame_id or 'map'
         self._upcoming = find_turn(points, self.lookahead_m, self.turn_angle,
                                    heading=self._robot_heading())
@@ -99,11 +93,8 @@ class TurnDetectorNode(Node):
             return None
         return math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
 
-    def on_route(self, msg: PoseArray):
-        self._route = [(p.position.x, p.position.y) for p in msg.poses]
-
-    def on_nav_feedback(self, msg):
-        self._remaining = msg.feedback.number_of_poses_remaining
+    def on_waypoints(self, msg: PoseArray):
+        self._waypoints = [(p.position.x, p.position.y) for p in msg.poses]
 
     def on_odom(self, msg: Odometry):
         self._turning = turning_direction(msg.twist.twist.angular.z, self.turn_rate)

@@ -48,7 +48,8 @@ foreach(plugin get_next_waypoint pop_waypoint)
   target_include_directories(hospital_robot_${plugin}_bt_node PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
-  ament_target_dependencies(hospital_robot_${plugin}_bt_node behaviortree_cpp_v3 geometry_msgs)
+  ament_target_dependencies(hospital_robot_${plugin}_bt_node
+    behaviortree_cpp_v3 geometry_msgs rclcpp)
   target_compile_definitions(hospital_robot_${plugin}_bt_node PRIVATE BT_PLUGIN_EXPORT)
 endforeach()
 

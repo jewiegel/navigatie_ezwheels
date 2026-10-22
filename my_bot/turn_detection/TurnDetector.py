@@ -54,18 +54,20 @@ def find_turn(points: Sequence[Point], lookahead_m: float, turn_angle: float,
     return None
 
 
-def extend_with_route(plan: Sequence[Point], route: Sequence[Point],
-                      remaining: int) -> list:
+def extend_with_route(plan: Sequence[Point], waypoints: Sequence[Point],
+                      tolerance_m: float = 0.3) -> list:
     """Plak de waypoints na het huidige doel achter het pad.
 
     Nav2 plant per waypoint, dus een bocht bij een waypoint staat nooit in het pad zelf.
-    remaining is number_of_poses_remaining uit de Nav2-feedback (inclusief het huidige
-    doel), dus het doel is route[-remaining]. Niet op positie matchen: een route die
-    twee keer langs hetzelfde punt komt, gaf dan de verkeerde vervolgwaypoints.
+    waypoints zijn de resterende waypoints, huidig doel eerst. Alleen als het pad op dat
+    doel eindigt: een oude lijst (route geannuleerd, nu een los doel) telt niet.
     """
-    if not plan or not 0 < remaining <= len(route):
+    if not plan or not waypoints:
         return list(plan)
-    return list(plan) + list(route[len(route) - remaining + 1:])
+    goal, end = waypoints[0], plan[-1]
+    if math.hypot(goal[0] - end[0], goal[1] - end[1]) > tolerance_m:
+        return list(plan)
+    return list(plan) + list(waypoints[1:])
 
 
 def turning_direction(angular_z: float, turn_rate: float) -> int:

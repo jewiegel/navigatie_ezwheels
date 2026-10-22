@@ -130,6 +130,7 @@ ros2 launch hospital_robot_bringup sim.launch.py
 |---|---|
 | `map` | `/ros2_ws/maps/ziekenhuis.yaml` |
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
+| `foxglove` | `true` — foxglove_bridge op poort 8765 (`ws://localhost:8765`) |
 
 Wat er gebeurt:
 
@@ -465,9 +466,12 @@ op `turn` (`my_bot_interfaces/msg/Turn`, 5 Hz), bedoeld voor een signal_manager
 
 - Kijkt `lookahead_m` (3 m) vooruit in `/plan`; een richtingsverandering van
   ≥ `turn_angle_deg` (30°) telt als bocht.
-- Omdat Nav2 per waypoint plant, plakt hij de volgende waypoints van de gestarte
-  route (`route_preview`) achter het pad: zo ziet hij ook de bocht **bij** een
-  waypoint op tijd.
+- Omdat Nav2 per waypoint plant, plakt hij de resterende waypoints achter het pad:
+  zo ziet hij ook de bocht **bij** een waypoint op tijd. Die lijst publiceert de
+  BT-node `GetNextWaypoint` op `remaining_waypoints` (huidig doel eerst, leeg als de
+  route klaar is), dus het werkt hoe de route ook gestart is: `start_route`, het
+  RViz-paneel (**Start Nav Through Poses**) of `ros2 action send_goal`. Niet met
+  **Start Waypoint Following**: dat gebruikt de `NavigateToPose`-boom per waypoint.
 - De bocht wordt gemeten ten opzichte van de rijrichting van de robot (TF
   `map → base_link`), dus ook vlak voor het waypoint blijft hij gemeld tot de robot
   draait (`turning`). Zonder TF valt hij terug op het eerste stuk pad en mist hij
