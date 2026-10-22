@@ -17,8 +17,8 @@ export ROS_LOG_DIR=/tmp
 source <workspace>/install/setup.bash
 
 ros2 launch hospital_robot_bringup robot.launch.py \
-  map:=/maps/ziekenhuis_a/map.yaml \
-  routes_file:=/maps/ziekenhuis_a/routes.yaml
+  map:=maps/Improvia_zolder.yaml \
+  routes_file:=maps/routes/zolder_routes.yaml
 ```
 
 Daarna: beginpositie zetten (stap 5) → route maken of kiezen (stap 7) → `start_route`.
