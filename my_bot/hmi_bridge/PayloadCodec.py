@@ -3,7 +3,8 @@
 op de echte robot). Alles is tekst; uitgangen zijn "1" (aan) of "0" (uit).
 
 Robot -> HMI:
-  robot/outputs/lamp_links, robot/outputs/lamp_rechts   "1"/"0" ('gevaar' = beide)
+  robot/outputs/lamp_links, robot/outputs/lamp_rechts   "1"/"0" ('gevaar' = beide),
+                                                         knipperend via blink_on
   robot/outputs/buzzer                                   "1"/"0"
   robot/patrol_state     'idle', 'rijdend', 'wachten', 'voltooid', 'fout'
 HMI -> robot:
@@ -39,8 +40,8 @@ class PayloadCodec:
         """Payload per MQTT-topic."""
         state = cmd.mission.split(' ', 1)[0]
         return {
-            TOPIC_LAMP_LEFT: _bit(cmd.blinkers in ('links', 'gevaar')),
-            TOPIC_LAMP_RIGHT: _bit(cmd.blinkers in ('rechts', 'gevaar')),
+            TOPIC_LAMP_LEFT: _bit(cmd.blink_on and cmd.blinkers in ('links', 'gevaar')),
+            TOPIC_LAMP_RIGHT: _bit(cmd.blink_on and cmd.blinkers in ('rechts', 'gevaar')),
             TOPIC_BUZZER: _bit(cmd.buzzer_on),
             TOPIC_STATE: PATROL_STATES.get(state, state.lower() or 'idle').encode('utf-8'),
         }

@@ -537,13 +537,16 @@ dezelfde MQTT-topics als de oude `mqtt_hmi_bridge`, die op de echte HMI werkte
 
 | Richting | MQTT-topic | Payload | Bron |
 |---|---|---|---|
-| robot → HMI | `robot/outputs/lamp_links`, `lamp_rechts` | `1`/`0` (`gevaar` = beide) | `/indicators` |
+| robot → HMI | `robot/outputs/lamp_links`, `lamp_rechts` | `1`/`0`, knipperend (`gevaar` = beide) | `/indicators` |
 | robot → HMI | `robot/outputs/buzzer` | `1`/`0` | `/buzzer_pattern`, afgespeeld door de bridge |
 | robot → HMI | `robot/patrol_state` | `idle`, `rijdend`, `wachten`, `voltooid`, `fout` | `/mission_status` |
 | HMI → robot | `robot/start_patrol` | `1` → `start_route` met `start_route_name` | |
 | HMI → robot | `robot/stop_patrol` | `1` → `cancel_mission` | |
 
 - Uitgangen gaan bij elke verandering en elke `heartbeat_s` (1 s) opnieuw.
+- **Knipperen:** de lampuitgang kan alleen aan/uit, dus de bridge knippert zelf:
+  `blink_period_s` (1 s) = 0,5 s aan, 0,5 s uit, beginnend met aan. Bij `gevaar`
+  knipperen beide lampen gelijk.
 - **Buzzer:** de uitgang kan alleen aan/uit, dus de bridge speelt het patroon zelf af
   (`enkel` 0,3 s; `dubbel` 2× 0,15 s; `elke_5s` elke 5 s 0,3 s, tot `uit`).
 - **Statuswoorden:** `IDLE` → `idle`, `DRIVING` → `rijdend`, `BLOCKED` → `wachten`,

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 class SignalCommand:
     """Robot -> HMI: stand van de uitgangen en de status voor het scherm."""
     blinkers: str = 'uit'      # 'uit', 'links', 'rechts', 'gevaar' (signal_manager)
+    blink_on: bool = True      # knipperfase: lampen van blinkers nu aan of uit
     buzzer_on: bool = False    # buzzer nu aan (BuzzerPlayer speelt het patroon af)
     mission: str = ''          # missietoestand, bv. 'DRIVING gang_a' (MissionManager)
 

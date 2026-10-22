@@ -19,7 +19,7 @@ from hmi_bridge.PayloadCodec import PayloadCodec  # noqa: E402
 class TestPayloadCodec(unittest.TestCase):
 
     def test_uitgangen_zoals_de_oude_bridge(self):
-        out = PayloadCodec.encode_command(SignalCommand('links', True, 'DRIVING gang_a'))
+        out = PayloadCodec.encode_command(SignalCommand('links', True, True, 'DRIVING gang_a'))
         self.assertEqual(out, {
             'robot/outputs/lamp_links': b'1', 'robot/outputs/lamp_rechts': b'0',
             'robot/outputs/buzzer': b'1', 'robot/patrol_state': b'rijdend'})
@@ -29,6 +29,11 @@ class TestPayloadCodec(unittest.TestCase):
         self.assertEqual(out['robot/outputs/lamp_links'], b'1')
         self.assertEqual(out['robot/outputs/lamp_rechts'], b'1')
         self.assertEqual(out['robot/patrol_state'], b'idle')    # nog geen missiestatus
+
+    def test_knipperfase_uit_zet_lampen_uit(self):
+        out = PayloadCodec.encode_command(SignalCommand(blinkers='gevaar', blink_on=False))
+        self.assertEqual(out['robot/outputs/lamp_links'], b'0')
+        self.assertEqual(out['robot/outputs/lamp_rechts'], b'0')
 
     def test_statuswoorden(self):
         for mission, word in (('ARRIVED gang_a', b'voltooid'), ('BLOCKED x', b'wachten'),

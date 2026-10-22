@@ -6,7 +6,8 @@ lampen en buzzer als "1"/"0", de status als tekst, start/stop-knoppen als "1".
 Robot -> HMI gaat bij elke verandering en elke heartbeat_s (hartslag).
 
 Interface:
-  sub  indicators      (std_msgs/String)  knipperlichten van de signal_manager
+  sub  indicators      (std_msgs/String)  knipperlichten van de signal_manager; de bridge
+       laat de lampen knipperen (blink_period_s)
   sub  buzzer_pattern  (std_msgs/String)  buzzerpatroon van de signal_manager; de bridge
        speelt het af op de aan/uit-uitgang (BuzzerPlayer)
   sub  mission_status  (std_msgs/String)  missietoestand van de MissionManager
@@ -20,6 +21,7 @@ Parameters:
   broker_host       MQTT-broker                                           (localhost)
   broker_port                                                             (1883)
   heartbeat_s       uitgangen opnieuw sturen als er niets verandert        (1.0)
+  blink_period_s    knipperen: helft aan, helft uit                       (1.0)
   mqtt_timeout_s    zo lang zonder MQTT-verbinding = weg                   (3.0)
   start_route_name  route voor de startknop; leeg = startknop doet niets  ('')
 """
@@ -46,6 +48,7 @@ class HMIBridgeNode(Node):
         host = self.declare_parameter('broker_host', 'localhost').value
         port = self.declare_parameter('broker_port', 1883).value
         self.heartbeat_s = self.declare_parameter('heartbeat_s', 1.0).value
+        self.blink_period_s = self.declare_parameter('blink_period_s', 1.0).value
         mqtt_timeout_s = self.declare_parameter('mqtt_timeout_s', 3.0).value
         self.start_route_name = self.declare_parameter('start_route_name', '').value
 
@@ -58,6 +61,7 @@ class HMIBridgeNode(Node):
         self.buzzer = BuzzerPlayer()
 
         self._blinkers = 'uit'
+        self._blink_since = 0.0         # begin van het huidige knipperlicht: start met aan
         self._mission = ''
         self._sent_command = None       # laatst verstuurde SignalCommand
         self._sent_time = None
@@ -80,7 +84,8 @@ class HMIBridgeNode(Node):
     # ── ROS -> HMI ───────────────────────────────────────────────────────────
 
     def on_indicators(self, msg: String):
-        self._blinkers = msg.data
+        if msg.data != self._blinkers:
+            self._blinkers, self._blink_since = msg.data, self._now()
 
     def on_buzzer(self, msg: String):
         try:
@@ -93,7 +98,8 @@ class HMIBridgeNode(Node):
 
     def update(self):
         now = self._now()
-        command = SignalCommand(self._blinkers, self.buzzer.is_on(now), self._mission)
+        blink_on = (now - self._blink_since) % self.blink_period_s < self.blink_period_s / 2
+        command = SignalCommand(self._blinkers, blink_on, self.buzzer.is_on(now), self._mission)
         if self.backend.is_connected() and (
                 command != self._sent_command or self._sent_time is None or
                 now - self._sent_time >= self.heartbeat_s):
