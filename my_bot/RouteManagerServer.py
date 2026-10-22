@@ -39,6 +39,12 @@ class RouteManagerServer(Node):
         default_file = os.path.join(
             get_package_share_directory('my_bot'), 'config', 'routes.yaml')
         routes_file = self.declare_parameter('routes_file', default_file).value
+        if not os.path.isabs(os.path.expanduser(routes_file)):
+            self.get_logger().warn(
+                f'routes_file "{routes_file}" is relatief en hangt dus af van de map waar je '
+                'start; geef een absoluut pad (bv. /maps/<locatie>/routes.yaml)')
+        routes_file = os.path.abspath(os.path.expanduser(routes_file))
+        self.routes_file = routes_file
         self.map_id = self.declare_parameter('map_id', 'ziekenhuis').value
         self.repository = YamlRouteRepository(routes_file)
         self.create_service(GetRoute, 'get_route', self.on_get_route)
@@ -130,7 +136,8 @@ class RouteManagerServer(Node):
         self.draft.clear()
         self._publish_draft()
         res.success = True
-        res.message = f'Route "{route.name}" opgeslagen ({len(route.waypoints)} waypoints)'
+        res.message = (f'Route "{route.name}" opgeslagen ({len(route.waypoints)} waypoints) '
+                       f'in {self.routes_file}')
         self.get_logger().info(res.message)
         return res
 

@@ -49,11 +49,11 @@ def generate_launch_description():
     return LaunchDescription([
         # No default on purpose: the robot must use a map of the real building.
         DeclareLaunchArgument('map', description='Map yaml of the real building for AMCL'),
+        # No default either: one in install/ is overwritten by the next build, losing saved
+        # routes. Use an absolute path next to the map, e.g. /maps/<site>/routes.yaml.
         DeclareLaunchArgument(
             'routes_file',
-            default_value=os.path.join(
-                get_package_share_directory('my_bot'), 'config', 'routes.yaml'),
-            description='Routes file of the route_manager (read and written)'),
+            description='Routes file of the route_manager (read and written), absolute path'),
         DeclareLaunchArgument(
             'timing_file',
             default_value=os.path.join(

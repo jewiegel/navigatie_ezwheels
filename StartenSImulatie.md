@@ -562,7 +562,7 @@ Start hetzelfde als `sim.launch.py`, maar zonder Gazebo en RViz en met
 | Argument | Standaard |
 |---|---|
 | `map` | — (verplicht) |
-| `routes_file` | `share/my_bot/config/routes.yaml` — **opgeslagen routes zijn weg na de volgende build**; geef een pad buiten `install/` |
+| `routes_file` | — (verplicht) — absoluut pad buiten `install/`, bv. `/maps/<locatie>/routes.yaml` |
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
 | `foxglove` | `true` |
 
