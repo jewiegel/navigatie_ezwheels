@@ -18,7 +18,7 @@ source <workspace>/install/setup.bash
 
 ros2 launch hospital_robot_bringup robot.launch.py \
   map:=/maps/ziekenhuis_a/map.yaml \
-  routes_file:=/maps/ziekenhuis_a/routes.yaml
+  routes_file:=maps/Improvia_zolder.yaml
 ```
 
 Daarna: beginpositie zetten (stap 5) → route maken of kiezen (stap 7) → `start_route`.
