@@ -17,7 +17,8 @@ Real robot: hospital navigation stack without Gazebo and RViz.
 
 Starts AMCL on the given map, Nav2 with the hospital behavior trees
 (navigation.launch.py, config/nav2_params_robot.yaml), the route_manager, the
-MissionManagerNode, the turn_detector, the signal_manager and optionally the foxglove_bridge.
+MissionManagerNode, the turn_detector, the signal_manager and optionally the HMI bridge
+and the foxglove_bridge.
 
 Expects the robot platform (EZ-Wheel / EZ-Way) to provide the hardware side:
 lidar on /laser_1/scan_filtered, /odom, TF odom -> base_link -> laser_1 and
@@ -61,6 +62,13 @@ def generate_launch_description():
             description='Timing parameters (navigation.*)'),
         DeclareLaunchArgument(
             'foxglove', default_value='true', description='Start foxglove_bridge on port 8765'),
+        DeclareLaunchArgument(
+            'hmi', default_value='true', description='Start the HMI bridge (MQTT)'),
+        DeclareLaunchArgument(
+            'hmi_broker', default_value='localhost', description='MQTT broker of the HMI'),
+        DeclareLaunchArgument(
+            'hmi_start_route', default_value='',
+            description='Route started by the HMI start button (empty: button does nothing)'),
 
         _include('my_bot', 'localization_launch.py', {
             'map': LaunchConfiguration('map'),
@@ -84,6 +92,14 @@ def generate_launch_description():
         Node(
             package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
             output='screen'),
+        Node(
+            package='my_bot', executable='HMIBridgeNode.py', name='hmi_bridge',
+            output='screen',
+            parameters=[{
+                'broker_host': LaunchConfiguration('hmi_broker'),
+                'start_route_name': LaunchConfiguration('hmi_start_route'),
+            }],
+            condition=IfCondition(LaunchConfiguration('hmi'))),
         Node(
             package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
             output='log', parameters=[{'port': 8765}],

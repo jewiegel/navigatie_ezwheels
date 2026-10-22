@@ -128,6 +128,9 @@ ros2 launch hospital_robot_bringup robot.launch.py \
 | `routes_file` | — **verplicht** | Routes van de locatie, **absoluut pad** (bv. `/maps/ziekenhuis_a/routes.yaml`). Een relatief pad hangt af van de map waar je start, dus dan lees en schrijf je steeds een ander bestand. Het volledige pad staat bij het starten in de log: `Routes uit /maps/...` |
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` | Tijden (zie stap 9) |
 | `foxglove` | `true` | `false` = geen foxglove_bridge |
+| `hmi` | `true` | `false` = geen HMI-bridge (zie [StartenSImulatie.md](StartenSImulatie.md), hmi_bridge) |
+| `hmi_broker` | `localhost` | MQTT-broker van de HMI |
+| `hmi_start_route` | — (leeg) | Route die de startknop op de HMI start; leeg = startknop doet niets |
 
 Klaar als de log `lifecycle_manager_navigation: Managed nodes are active` toont.
 

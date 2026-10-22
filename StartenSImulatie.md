@@ -529,6 +529,40 @@ Vertrek- en aankomstpiep komen van `/mission_status`, dus alleen bij `start_rout
 
 > Start `indicator_node.py` niet tegelijk: die publiceert op dezelfde topics.
 
+### hmi_bridge: koppeling met de HMI via MQTT
+
+`HMIBridgeNode.py` (start mee met `robot.launch.py`, niet in de simulatie) stuurt de
+signalen naar de HMI en ontvangt de knoppen (`my_bot/hmi_bridge/`). JSON, versie 1:
+
+| Richting | MQTT-topic | Payload |
+|---|---|---|
+| robot → HMI | `robot/hmi/command` | `{"v": 1, "seq": 42, "blinkers": "links", "buzzer": "enkel", "buzzer_id": 3, "mission": "DRIVING gang_a"}` |
+| HMI → robot | `robot/hmi/status` | `{"v": 1, "ack": 42, "start": false, "stop": false}` |
+
+- **command** gaat bij elke verandering en elke `heartbeat_s` (1 s), met een oplopend
+  `seq`. `blinkers` en `buzzer` komen van de signal_manager (`/indicators`,
+  `/buzzer_pattern`), `mission` van `/mission_status`.
+- **Buzzer:** speel het patroon alleen af als `buzzer_id` verandert. Anders herhaalt de
+  hartslag elke seconde een `enkel`.
+- **status:** `ack` = laatst ontvangen `seq`. `start`/`stop` = knop ingedrukt; de bridge
+  reageert alleen op indrukken (`false` → `true`): `start` → `start_route` met
+  `start_route_name`, `stop` → `cancel_mission`. Ongeldige berichten worden genegeerd
+  (waarschuwing in de log).
+- **Verbinding:** stuurt de HMI langer dan `hmi_timeout_s` (3 s) geen status, dan wordt
+  `/hmi/connected` `false` (en weer `true` bij het volgende bericht). Laat de HMI dus
+  ook zonder knopdruk regelmatig (bv. elke seconde) een status sturen.
+
+Testen zonder HMI, met een broker (bv. `mosquitto`) en de `mosquitto_*`-clients:
+
+```bash
+ros2 run my_bot HMIBridgeNode.py --ros-args -p start_route_name:=gang_a
+mosquitto_sub -t robot/hmi/command                                   # commands zien
+mosquitto_pub -t robot/hmi/status -m '{"v": 1, "ack": 1, "start": true}'
+ros2 topic echo /hmi/connected --qos-durability transient_local
+```
+
+Zonder broker: `-p backend:=memory` (verstuurt niets, alleen voor tests).
+
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
 Deze nodes luisteren nog naar de topics van de oude `patrol_node`
