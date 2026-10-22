@@ -7,8 +7,8 @@ from hmi_bridge.HMIMessages import HMIStatus, SignalCommand
 
 
 class SignalBackend(ABC):
-    """Verbinding met de HMI. latest_status geeft bij elk ontvangen bericht een nieuw object,
-    zodat de aanroeper met `is` kan zien of er iets nieuws is."""
+    """Verbinding met de HMI. latest_status geeft per knopdruk een nieuw object, zodat de
+    aanroeper met `is` kan zien of er een nieuwe druk is."""
 
     @abstractmethod
     def connect(self) -> None:
@@ -23,7 +23,7 @@ class SignalBackend(ABC):
         pass
 
     @abstractmethod
-    def send(self, cmd: SignalCommand, seq: int) -> None:
+    def send(self, cmd: SignalCommand) -> None:
         pass
 
     @abstractmethod

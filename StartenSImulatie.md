@@ -531,34 +531,37 @@ Vertrek- en aankomstpiep komen van `/mission_status`, dus alleen bij `start_rout
 
 ### hmi_bridge: koppeling met de HMI via MQTT
 
-`HMIBridgeNode.py` (start mee met `robot.launch.py`, niet in de simulatie) stuurt de
-signalen naar de HMI en ontvangt de knoppen (`my_bot/hmi_bridge/`). JSON, versie 1:
+`HMIBridgeNode.py` (start mee met `robot.launch.py`, niet in de simulatie) gebruikt
+dezelfde MQTT-topics als de oude `mqtt_hmi_bridge`, die op de echte HMI werkte
+(`my_bot/hmi_bridge/PayloadCodec.py`):
 
-| Richting | MQTT-topic | Payload |
-|---|---|---|
-| robot → HMI | `robot/hmi/command` | `{"v": 1, "seq": 42, "blinkers": "links", "buzzer": "enkel", "buzzer_id": 3, "mission": "DRIVING gang_a"}` |
-| HMI → robot | `robot/hmi/status` | `{"v": 1, "ack": 42, "start": false, "stop": false}` |
+| Richting | MQTT-topic | Payload | Bron |
+|---|---|---|---|
+| robot → HMI | `robot/outputs/lamp_links`, `lamp_rechts` | `1`/`0` (`gevaar` = beide) | `/indicators` |
+| robot → HMI | `robot/outputs/buzzer` | `1`/`0` | `/buzzer_pattern`, afgespeeld door de bridge |
+| robot → HMI | `robot/patrol_state` | `idle`, `rijdend`, `wachten`, `voltooid`, `fout` | `/mission_status` |
+| HMI → robot | `robot/start_patrol` | `1` → `start_route` met `start_route_name` | |
+| HMI → robot | `robot/stop_patrol` | `1` → `cancel_mission` | |
 
-- **command** gaat bij elke verandering en elke `heartbeat_s` (1 s), met een oplopend
-  `seq`. `blinkers` en `buzzer` komen van de signal_manager (`/indicators`,
-  `/buzzer_pattern`), `mission` van `/mission_status`.
-- **Buzzer:** speel het patroon alleen af als `buzzer_id` verandert. Anders herhaalt de
-  hartslag elke seconde een `enkel`.
-- **status:** `ack` = laatst ontvangen `seq`. `start`/`stop` = knop ingedrukt; de bridge
-  reageert alleen op indrukken (`false` → `true`): `start` → `start_route` met
-  `start_route_name`, `stop` → `cancel_mission`. Ongeldige berichten worden genegeerd
-  (waarschuwing in de log).
-- **Verbinding:** stuurt de HMI langer dan `hmi_timeout_s` (3 s) geen status, dan wordt
-  `/hmi/connected` `false` (en weer `true` bij het volgende bericht). Laat de HMI dus
-  ook zonder knopdruk regelmatig (bv. elke seconde) een status sturen.
+- Uitgangen gaan bij elke verandering en elke `heartbeat_s` (1 s) opnieuw.
+- **Buzzer:** de uitgang kan alleen aan/uit, dus de bridge speelt het patroon zelf af
+  (`enkel` 0,3 s; `dubbel` 2× 0,15 s; `elke_5s` elke 5 s 0,3 s, tot `uit`).
+- **Statuswoorden:** `IDLE` → `idle`, `DRIVING` → `rijdend`, `BLOCKED` → `wachten`,
+  `ARRIVED` → `voltooid`, `WAITING_OPERATOR`/`ERROR` → `fout`.
+- **Verbinding:** `/hmi/mqtt_connected` is `false` als de verbinding met de broker
+  langer dan `mqtt_timeout_s` (3 s) weg is. Of de HMI zelf leeft, is niet te zien: die
+  stuurt alleen iets bij een knopdruk.
+- Start de oude `mqtt_hmi_bridge.py` niet tegelijk: die stuurt dezelfde uitgangen.
 
-Testen zonder HMI, met een broker (bv. `mosquitto`) en de `mosquitto_*`-clients:
+Testen zonder HMI, met een broker en de `mosquitto_*`-clients:
 
 ```bash
-ros2 run my_bot HMIBridgeNode.py --ros-args -p start_route_name:=gang_a
-mosquitto_sub -t robot/hmi/command                                   # commands zien
-mosquitto_pub -t robot/hmi/status -m '{"v": 1, "ack": 1, "start": true}'
-ros2 topic echo /hmi/connected --qos-durability transient_local
+docker run --rm -d --name mqtt_test --network host eclipse-mosquitto:2.0.18 mosquitto -c /mosquitto-no-auth.conf
+ros2 run my_bot HMIBridgeNode.py --ros-args -p use_sim_time:=true -p start_route_name:=gang_b
+docker exec mqtt_test mosquitto_sub -v -t 'robot/#'                # alles wat er gebeurt
+docker exec mqtt_test mosquitto_pub -t robot/start_patrol -m 1     # startknop
+docker exec mqtt_test mosquitto_pub -t robot/stop_patrol -m 1      # stopknop
+docker stop mqtt_test
 ```
 
 Zonder broker: `-p backend:=memory` (verstuurt niets, alleen voor tests).

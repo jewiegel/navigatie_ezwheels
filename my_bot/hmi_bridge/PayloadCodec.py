@@ -1,42 +1,57 @@
 #!/usr/bin/env python3
-"""JSON-berichten tussen robot en HMI.
+"""MQTT-topics en payloads van de FT2J HMI (zelfde als de oude mqtt_hmi_bridge, die werkte
+op de echte robot). Alles is tekst; uitgangen zijn "1" (aan) of "0" (uit).
 
-Robot -> HMI (command):  {"v": 1, "seq": 42, "blinkers": "links", "buzzer": "enkel",
-                          "buzzer_id": 3, "mission": "DRIVING gang_a"}
-HMI -> robot (status):   {"v": 1, "ack": 42, "start": false, "stop": false}
+Robot -> HMI:
+  robot/outputs/lamp_links, robot/outputs/lamp_rechts   "1"/"0" ('gevaar' = beide)
+  robot/outputs/buzzer                                   "1"/"0"
+  robot/patrol_state     'idle', 'rijdend', 'wachten', 'voltooid', 'fout'
+HMI -> robot:
+  robot/start_patrol, robot/stop_patrol                  "1" = knop ingedrukt
 """
 
-import json
+from typing import Dict, Optional
 
 from hmi_bridge.HMIMessages import HMIStatus, SignalCommand
+
+TOPIC_LAMP_LEFT = 'robot/outputs/lamp_links'
+TOPIC_LAMP_RIGHT = 'robot/outputs/lamp_rechts'
+TOPIC_BUZZER = 'robot/outputs/buzzer'
+TOPIC_STATE = 'robot/patrol_state'
+TOPIC_START = 'robot/start_patrol'
+TOPIC_STOP = 'robot/stop_patrol'
+
+# MissionState -> statuswoorden die de HMI van de oude patrol_node kent
+PATROL_STATES = {
+    'IDLE': 'idle', 'DRIVING': 'rijdend', 'BLOCKED': 'wachten',
+    'WAITING_OPERATOR': 'fout', 'ARRIVED': 'voltooid', 'ERROR': 'fout',
+}
+
+
+def _bit(on: bool) -> bytes:
+    return b'1' if on else b'0'
 
 
 class PayloadCodec:
 
-    VERSION: int = 1
+    @staticmethod
+    def encode_command(cmd: SignalCommand) -> Dict[str, bytes]:
+        """Payload per MQTT-topic."""
+        state = cmd.mission.split(' ', 1)[0]
+        return {
+            TOPIC_LAMP_LEFT: _bit(cmd.blinkers in ('links', 'gevaar')),
+            TOPIC_LAMP_RIGHT: _bit(cmd.blinkers in ('rechts', 'gevaar')),
+            TOPIC_BUZZER: _bit(cmd.buzzer_on),
+            TOPIC_STATE: PATROL_STATES.get(state, state.lower() or 'idle').encode('utf-8'),
+        }
 
     @staticmethod
-    def encode_command(cmd: SignalCommand, seq: int) -> bytes:
-        return json.dumps({
-            'v': PayloadCodec.VERSION, 'seq': seq, 'blinkers': cmd.blinkers,
-            'buzzer': cmd.buzzer, 'buzzer_id': cmd.buzzer_id, 'mission': cmd.mission,
-        }).encode('utf-8')
-
-    @staticmethod
-    def decode_status(payload: bytes) -> HMIStatus:
-        """ValueError bij een bericht dat geen geldige status van deze versie is."""
-        try:
-            data = json.loads(payload)
-        except (UnicodeDecodeError, json.JSONDecodeError) as e:
-            raise ValueError(f'geen JSON: {e}') from None
-        if not isinstance(data, dict):
-            raise ValueError('geen JSON-object')
-        if data.get('v') != PayloadCodec.VERSION:
-            raise ValueError(f'versie {data.get("v")!r}, verwacht {PayloadCodec.VERSION}')
-        ack = data.get('ack')
-        if ack is not None and (not isinstance(ack, int) or isinstance(ack, bool)):
-            raise ValueError(f'ack moet een geheel getal zijn, niet {ack!r}')
-        for key in ('start', 'stop'):
-            if not isinstance(data.get(key, False), bool):
-                raise ValueError(f'{key} moet true of false zijn')
-        return HMIStatus(ack, data.get('start', False), data.get('stop', False))
+    def decode_status(topic: str, payload: bytes) -> Optional[HMIStatus]:
+        """Knopdruk, of None voor alles wat geen "1" op een knoptopic is (genegeerd)."""
+        if payload.strip() != b'1':
+            return None
+        if topic == TOPIC_START:
+            return HMIStatus(start=True)
+        if topic == TOPIC_STOP:
+            return HMIStatus(stop=True)
+        return None

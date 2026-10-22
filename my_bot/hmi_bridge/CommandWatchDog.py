@@ -4,7 +4,11 @@ from typing import Optional
 
 
 class CommandWatchDog:
-    """Verlopen als feed() langer dan timeout_s geleden is (of nog nooit)."""
+    """Verlopen als feed() langer dan timeout_s geleden is (of nog nooit).
+
+    De HMI stuurt alleen iets bij een knopdruk, dus de bridge voedt hem met de
+    MQTT-verbinding: een korte onderbreking (herverbinden) telt niet als weg.
+    """
 
     def __init__(self, timeout_s: float):
         self.timeout_s = timeout_s
