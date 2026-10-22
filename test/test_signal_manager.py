@@ -96,23 +96,31 @@ class TestHorn(unittest.TestCase):
 
     def pattern(self, **kwargs):
         self.horn.update(RobotFacts(**kwargs), 0.0)
-        pattern, self.horn.pending = self.horn.pending, HornPattern.NONE
+        pattern, self.horn.pending = self.horn.pending, None
         return pattern
 
     def test_vertrek_en_aankomst(self):
-        self.assertEqual(self.pattern(mode=DRIVING), HornPattern.SHORT)
-        self.assertEqual(self.pattern(mode=DRIVING), HornPattern.NONE)     # alleen bij wissel
-        self.assertEqual(self.pattern(mode=RobotMode.ARRIVED), HornPattern.SHORT)
+        self.assertEqual(self.pattern(mode=DRIVING), HornPattern.SINGLE)
+        self.assertIsNone(self.pattern(mode=DRIVING))                       # alleen bij wissel
+        self.assertEqual(self.pattern(mode=RobotMode.ARRIVED), HornPattern.SINGLE)
 
-    def test_blokkade_kort_en_doorrijden_stil(self):
+    def test_blokkade_herhaalt_tot_uit(self):
         self.pattern(mode=DRIVING)
-        self.assertEqual(self.pattern(mode=RobotMode.BLOCKED, collision=CollisionAction.BLOCKED),
-                         HornPattern.SHORT)
-        self.assertEqual(self.pattern(mode=DRIVING), HornPattern.NONE)    # geen nieuw vertrek
+        blocked = {'mode': RobotMode.BLOCKED, 'collision': CollisionAction.BLOCKED}
+        self.assertEqual(self.pattern(**blocked), HornPattern.EVERY_5S)
+        self.assertIsNone(self.pattern(**blocked))                          # één keer sturen
+        self.assertEqual(self.pattern(mode=DRIVING), HornPattern.OFF)       # stoppen
+        self.assertIsNone(self.pattern(mode=DRIVING))                       # geen nieuw vertrek
 
     def test_wachten_op_operator_dubbel(self):
         self.pattern(mode=DRIVING)
         self.assertEqual(self.pattern(mode=RobotMode.WAITING_OPERATOR), HornPattern.DOUBLE)
+
+    def test_eenmalig_niet_tijdens_herhalen(self):
+        self.pattern(mode=DRIVING)
+        self.pattern(mode=DRIVING, collision=CollisionAction.BLOCKED)
+        self.assertIsNone(self.pattern(mode=RobotMode.WAITING_OPERATOR,
+                                       collision=CollisionAction.BLOCKED))
 
 
 if __name__ == '__main__':

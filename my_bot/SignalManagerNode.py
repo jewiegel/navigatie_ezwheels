@@ -9,8 +9,8 @@ Interface:
   sub  navigation/blocked  (std_msgs/Bool, transient_local)    CollisionStateSource
   pub  indicators          (std_msgs/String)  'links', 'rechts', 'gevaar' of 'uit', bij elke
        verandering; mqtt_hmi_bridge zet dit om naar de lampen
-  pub  buzzer              (std_msgs/Bool)    piepjes van Horn (True..False);
-       mqtt_hmi_bridge zet dit om naar de buzzer
+  pub  buzzer_pattern      (std_msgs/String)  buzzerpatroon van Horn: 'enkel', 'dubbel',
+       'elke_5s' of 'uit' (zie HornPattern); de ontvanger speelt het af
 
 Parameters:
   hold_s          zo lang brandt het knipperlicht na als er geen bocht meer is  (1.0)
@@ -26,7 +26,7 @@ from std_msgs.msg import Bool, String
 from my_bot_interfaces.msg import Turn
 from signal_manager.RobotFacts import RobotFacts
 from signal_manager.actuators.Blinkers import Blinkers
-from signal_manager.actuators.Horn import Horn, HornPattern
+from signal_manager.actuators.Horn import Horn
 from signal_manager.sources.CollisionStateSource import CollisionStateSource
 from signal_manager.sources.RobotStateSource import RobotStateSource
 from signal_manager.sources.TurnSource import TurnSource
@@ -54,10 +54,8 @@ class SignalManagerNode(Node):
             Bool, 'navigation/blocked', lambda m: collision.update(m, self._now()),
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.indicator_pub = self.create_publisher(String, 'indicators', 10)
-        self.buzzer_pub = self.create_publisher(Bool, 'buzzer', 10)
+        self.buzzer_pub = self.create_publisher(String, 'buzzer_pattern', 10)
         self._published_state = None
-        self._beep_steps = []        # nog af te spelen (aan, duur) van het huidige patroon
-        self._beep_timer = None
 
         self.create_timer(1.0 / rate_hz, self.update)
         self.get_logger().info('SignalManager gestart')
@@ -76,28 +74,10 @@ class SignalManagerNode(Node):
             self.get_logger().info(f'knipperlichten: {self.blinkers.state.value}')
 
         self.horn.update(facts, now)
-        if self.horn.pending != HornPattern.NONE:
-            self.get_logger().info(f'claxon: {self.horn.pending.name}')
-            self._play(self.horn.pending)
-            self.horn.pending = HornPattern.NONE
-
-    # ── Claxon: patroon afspelen op /buzzer ──────────────────────────────────
-
-    def _play(self, pattern: HornPattern):
-        """Een nieuw patroon onderbreekt het vorige."""
-        self._beep_steps = [(i % 2 == 0, d) for i, d in enumerate(pattern.value)]
-        self._next_beep_step()
-
-    def _next_beep_step(self):
-        if self._beep_timer is not None:
-            self.destroy_timer(self._beep_timer)
-            self._beep_timer = None
-        if not self._beep_steps:
-            self.buzzer_pub.publish(Bool(data=False))
-            return
-        on, duration = self._beep_steps.pop(0)
-        self.buzzer_pub.publish(Bool(data=on))
-        self._beep_timer = self.create_timer(duration, self._next_beep_step)
+        if self.horn.pending is not None:
+            self.buzzer_pub.publish(String(data=self.horn.pending.value))
+            self.get_logger().info(f'buzzer: {self.horn.pending.value}')
+            self.horn.pending = None
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9

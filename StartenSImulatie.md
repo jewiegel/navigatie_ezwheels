@@ -503,15 +503,25 @@ sources → `RobotFacts` → actuators → uitgangen (`my_bot/signal_manager/`).
 | Actuator | Gedrag | Uitgang |
 |---|---|---|
 | `Blinkers` | `gevaar` bij blokkade, `WAITING_OPERATOR`/`ERROR`, of tijdens `DRIVING` een source die niet vers is; anders `links`/`rechts` bij een bocht (brandt `hold_s` = 1 s na); anders `uit` | `/indicators` (bij verandering) |
-| `Horn` | kort bij vertrek, aankomst en begin blokkade; dubbel bij `WAITING_OPERATOR`/`ERROR` | `/buzzer` (`true`/`false`) |
+| `Horn` | `elke_5s` zolang de route geblokkeerd is, daarna `uit`; anders `enkel` bij vertrek en aankomst, `dubbel` bij `WAITING_OPERATOR`/`ERROR` | `/buzzer_pattern` (bij verandering) |
 
-`mqtt_hmi_bridge` zet `/indicators` en `/buzzer` om naar MQTT (`robot/outputs/lamp_links`,
-`lamp_rechts`, `buzzer`). De actuators bepalen alleen hun toestand; het versturen zit in
-de node, zodat dat later direct via MQTT kan.
+Buzzerpatronen op `/buzzer_pattern` (`std_msgs/String`); de ontvanger speelt ze af:
+
+| Patroon | Betekenis |
+|---|---|
+| `enkel` | één piep |
+| `dubbel` | twee piepjes |
+| `elke_5s` | elke 5 s een piep, tot een ander patroon komt |
+| `uit` | herhalend patroon stoppen |
+
+`mqtt_hmi_bridge` zet `/indicators` om naar MQTT (`robot/outputs/lamp_links`,
+`lamp_rechts`). `/buzzer_pattern` gaat nog niet naar MQTT: de bridge kent alleen het
+oude `/buzzer` (`Bool`, aan/uit). De actuators bepalen alleen hun toestand; het
+versturen zit in de node, zodat dat later direct via MQTT kan.
 
 ```bash
 ros2 topic echo /indicators
-ros2 topic echo /buzzer std_msgs/msg/Bool
+ros2 topic echo /buzzer_pattern std_msgs/msg/String
 ```
 
 Vertrek- en aankomstpiep komen van `/mission_status`, dus alleen bij `start_route`
