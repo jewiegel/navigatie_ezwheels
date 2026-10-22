@@ -17,10 +17,29 @@
 namespace hospital_robot_bt_nodes
 {
 
+GetNextWaypoint::GetNextWaypoint(const std::string & name, const BT::NodeConfiguration & config)
+: BT::SyncActionNode(name, config)
+{
+  if (config.blackboard->getAny("node")) {
+    auto node = config.blackboard->get<rclcpp::Node::SharedPtr>("node");
+    publisher_ = node->create_publisher<geometry_msgs::msg::PoseArray>(
+      "remaining_waypoints", rclcpp::QoS(1).reliable().transient_local());
+  }
+}
+
 BT::NodeStatus GetNextWaypoint::tick()
 {
   Goals goals;
-  if (!getInput("goals", goals) || goals.empty()) {
+  getInput("goals", goals);
+  if (publisher_) {
+    geometry_msgs::msg::PoseArray msg;
+    msg.header.frame_id = goals.empty() ? "map" : goals.front().header.frame_id;
+    for (const auto & goal : goals) {
+      msg.poses.push_back(goal.pose);
+    }
+    publisher_->publish(msg);
+  }
+  if (goals.empty()) {
     return BT::NodeStatus::FAILURE;
   }
   setOutput("goal", goals.front());

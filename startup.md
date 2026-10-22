@@ -18,7 +18,7 @@ source <workspace>/install/setup.bash
 
 ros2 launch hospital_robot_bringup robot.launch.py \
   map:=/maps/ziekenhuis_a/map.yaml \
-  routes_file:=/maps/ziekenhuis_a/routes.yaml
+  routes_file:=maps/Improvia_zolder.yaml
 ```
 
 Daarna: beginpositie zetten (stap 5) → route maken of kiezen (stap 7) → `start_route`.
@@ -34,6 +34,7 @@ Daarna: beginpositie zetten (stap 5) → route maken of kiezen (stap 7) → `sta
 | Navigatie van EZ-Way ("automatic mode": eigen Nav2/AMCL) | EZ-Way-software | **moet uit** |
 | AMCL, map_server, Nav2 met de ziekenhuisbomen | `robot.launch.py` | |
 | route_manager, MissionManagerNode | `robot.launch.py` | |
+| turn_detector (bochten op `turn`) | `robot.launch.py` | |
 | foxglove_bridge (poort 8765) | `robot.launch.py` | optioneel |
 
 De navigatie van EZ-Way moet uit, omdat die Nav2-nodes met dezelfde namen start. Die

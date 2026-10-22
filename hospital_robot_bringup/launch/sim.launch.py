@@ -17,7 +17,8 @@ Gazebo test of the hospital behavior tree.
 
 Starts the hospital world (my_bot/launch_sim.launch.py), RViz, AMCL on the
 hospital map, Nav2 with the hospital behavior tree (navigation.launch.py), the
-route_manager and the MissionManagerNode.
+route_manager, the MissionManagerNode, the turn_detector and optionally the
+foxglove_bridge.
 """
 
 import os
@@ -25,6 +26,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -56,6 +58,8 @@ def generate_launch_description():
             # Source tree, not install/: routes saved with route_draft/save must survive a build.
             default_value='/ros2_ws/src/navigatie_ezwheels/config/routes.yaml',
             description='Routes file of the route_manager (read and written)'),
+        DeclareLaunchArgument(
+            'foxglove', default_value='true', description='Start foxglove_bridge on port 8765'),
 
         _include('my_bot', 'launch_sim.launch.py', {}),
 
@@ -63,6 +67,10 @@ def generate_launch_description():
             package='rviz2', executable='rviz2', output='log',
             arguments=['-d', os.path.join(my_bot, 'config', 'setup.rviz')],
             parameters=[{'use_sim_time': True}]),
+        Node(
+            package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
+            output='log', parameters=[{'port': 8765, 'use_sim_time': True}],
+            condition=IfCondition(LaunchConfiguration('foxglove'))),
 
         TimerAction(period=NAV_START_DELAY_S, actions=[
             _include('my_bot', 'localization_launch.py', {
@@ -82,6 +90,9 @@ def generate_launch_description():
                 }]),
             Node(
                 package='my_bot', executable='MissionManagerNode.py', name='mission_manager',
+                output='screen', parameters=[{'use_sim_time': True}]),
+            Node(
+                package='my_bot', executable='TurnDetectorNode.py', name='turn_detector',
                 output='screen', parameters=[{'use_sim_time': True}]),
         ]),
     ])

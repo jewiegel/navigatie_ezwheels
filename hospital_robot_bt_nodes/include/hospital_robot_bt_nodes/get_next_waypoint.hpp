@@ -19,20 +19,24 @@
 #include <vector>
 
 #include "behaviortree_cpp_v3/action_node.h"
+#include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 namespace hospital_robot_bt_nodes
 {
 
 /// Outputs the first waypoint of `goals` as `goal`. FAILURE if `goals` is empty,
 /// which the hospital tree uses as "route finished".
+/// Also publishes all remaining waypoints (current goal first, empty when the route is
+/// done) on `remaining_waypoints` (PoseArray, transient_local), so the turn detector sees
+/// turns at waypoints, whoever started the route. Only when the blackboard has a "node".
 class GetNextWaypoint : public BT::SyncActionNode
 {
 public:
   using Goals = std::vector<geometry_msgs::msg::PoseStamped>;
 
-  GetNextWaypoint(const std::string & name, const BT::NodeConfiguration & config)
-  : BT::SyncActionNode(name, config) {}
+  GetNextWaypoint(const std::string & name, const BT::NodeConfiguration & config);
 
   static BT::PortsList providedPorts()
   {
@@ -44,6 +48,8 @@ public:
 
 private:
   BT::NodeStatus tick() override;
+
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr publisher_;
 };
 
 }  // namespace hospital_robot_bt_nodes

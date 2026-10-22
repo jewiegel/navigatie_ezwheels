@@ -79,6 +79,9 @@ def generate_launch_description():
             package='my_bot', executable='MissionManagerNode.py', name='mission_manager',
             output='screen'),
         Node(
+            package='my_bot', executable='TurnDetectorNode.py', name='turn_detector',
+            output='screen'),
+        Node(
             package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
             output='log', parameters=[{'port': 8765}],
             condition=IfCondition(LaunchConfiguration('foxglove'))),

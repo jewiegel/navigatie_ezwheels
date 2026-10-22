@@ -14,12 +14,16 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "behaviortree_cpp_v3/bt_factory.h"
 #include "hospital_robot_bt_nodes/get_next_waypoint.hpp"
 #include "hospital_robot_bt_nodes/pop_waypoint.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 using Goals = std::vector<geometry_msgs::msg::PoseStamped>;
 
@@ -87,4 +91,29 @@ TEST_F(WaypointNodesTest, PopWaypointOnEmptyListStaysEmpty)
   auto tree = make_tree("<PopWaypoint input_goals=\"{goals}\" output_goals=\"{goals}\"/>");
   EXPECT_EQ(tree.tickRoot(), BT::NodeStatus::SUCCESS);
   EXPECT_TRUE(blackboard_->get<Goals>("goals").empty());
+}
+
+TEST_F(WaypointNodesTest, GetNextWaypointPublishesRemainingWaypoints)
+{
+  rclcpp::init(0, nullptr);
+  auto node = std::make_shared<rclcpp::Node>("get_next_waypoint_test");
+  blackboard_->set<rclcpp::Node::SharedPtr>("node", node);
+  std::vector<size_t> sizes;
+  auto sub = node->create_subscription<geometry_msgs::msg::PoseArray>(
+    "remaining_waypoints", rclcpp::QoS(10).reliable().transient_local(),
+    [&](geometry_msgs::msg::PoseArray::SharedPtr msg) {sizes.push_back(msg->poses.size());});
+
+  blackboard_->set<Goals>("goals", make_goals({1.0, 2.0}));
+  auto tree = make_tree("<GetNextWaypoint goals=\"{goals}\" goal=\"{goal}\"/>");
+  EXPECT_EQ(tree.tickRoot(), BT::NodeStatus::SUCCESS);
+  blackboard_->set<Goals>("goals", Goals());
+  EXPECT_EQ(tree.tickRoot(), BT::NodeStatus::FAILURE);  // route done: empty list
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (sizes.size() < 2 && std::chrono::steady_clock::now() < deadline) {
+    rclcpp::spin_some(node);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(sizes, (std::vector<size_t>{2u, 0u}));
+  rclcpp::shutdown();
 }

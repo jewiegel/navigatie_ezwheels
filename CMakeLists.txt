@@ -40,6 +40,7 @@ install(
 install(PROGRAMS
   my_bot/MissionManagerNode.py
   my_bot/RouteManagerServer.py
+  my_bot/TurnDetectorNode.py
   my_bot/indicator_node.py
   my_bot/environment_speed_node.py
   my_bot/mqtt_hmi_bridge.py
@@ -49,7 +50,7 @@ install(PROGRAMS
 
 # Packages van MissionManagerNode en RouteManagerServer (import: from mission_manager import ...)
 install(
-  DIRECTORY my_bot/mission_manager my_bot/route_manager
+  DIRECTORY my_bot/mission_manager my_bot/route_manager my_bot/turn_detection
   DESTINATION lib/${PROJECT_NAME}
   PATTERN "__pycache__" EXCLUDE
 )

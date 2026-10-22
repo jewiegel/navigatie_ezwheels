@@ -130,6 +130,7 @@ ros2 launch hospital_robot_bringup sim.launch.py
 |---|---|
 | `map` | `/ros2_ws/maps/ziekenhuis.yaml` |
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
+| `foxglove` | `true` — foxglove_bridge op poort 8765 (`ws://localhost:8765`) |
 
 Wat er gebeurt:
 
@@ -449,6 +450,44 @@ routes:
 
   Een fout in het bestand (bv. ontbrekende `yaw`) geeft bij `start_route` een
   melding met route en waypointnummer.
+
+### turn_detector: bochten op tijd herkennen
+
+`TurnDetectorNode.py` (start mee met `sim.launch.py` en `robot.launch.py`) publiceert
+op `turn` (`my_bot_interfaces/msg/Turn`, 5 Hz), bedoeld voor een signal_manager
+(knipperlichten):
+
+| Veld | Betekenis |
+|---|---|
+| `direction` | komende bocht volgens het pad: `NONE` (0), `LEFT` (1), `RIGHT` (2) |
+| `distance` | m tot de bocht begint |
+| `angle` | rad, hoeveel de bocht draait (+ = links) |
+| `turning` | draait de robot nu (gemeten via `/odom`): `NONE`, `LEFT`, `RIGHT` |
+
+- Kijkt `lookahead_m` (3 m) vooruit in `/plan`; een richtingsverandering van
+  ≥ `turn_angle_deg` (30°) telt als bocht.
+- Omdat Nav2 per waypoint plant, plakt hij de resterende waypoints achter het pad:
+  zo ziet hij ook de bocht **bij** een waypoint op tijd. Die lijst publiceert de
+  BT-node `GetNextWaypoint` op `remaining_waypoints` (huidig doel eerst, leeg als de
+  route klaar is), dus het werkt hoe de route ook gestart is: `start_route`, het
+  RViz-paneel (**Start Nav Through Poses**) of `ros2 action send_goal`. Niet met
+  **Start Waypoint Following**: dat gebruikt de `NavigateToPose`-boom per waypoint.
+- De bocht wordt gemeten ten opzichte van de rijrichting van de robot (TF
+  `map → base_link`), dus ook vlak voor het waypoint blijft hij gemeld tot de robot
+  draait (`turning`). Zonder TF valt hij terug op het eerste stuk pad en mist hij
+  een bocht in de laatste ~0,5 m.
+- Bij elke verandering logt hij een regel, bv. `bocht RECHTS over 2.8 m (-31°)`.
+
+```bash
+ros2 topic echo /turn
+```
+
+Zien wat hij herkent: `turn_markers` (MarkerArray). In RViz staat het display
+**TurnMarkers** al aan; in Foxglove zet je `/turn_markers` aan in het 3D-panel.
+
+- Oranje knipperend bolletje links- of rechtsvoor op de robot: komende bocht of
+  draaien naar die kant.
+- Oranje bol met tekst (bv. `RECHTS 2.8 m`) op het pad: waar de bocht begint.
 
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
