@@ -17,7 +17,7 @@ Real robot: hospital navigation stack without Gazebo and RViz.
 
 Starts AMCL on the given map, Nav2 with the hospital behavior trees
 (navigation.launch.py, config/nav2_params_robot.yaml), the route_manager, the
-MissionManagerNode and optionally the foxglove_bridge.
+MissionManagerNode, the turn_detector, the signal_manager and optionally the foxglove_bridge.
 
 Expects the robot platform (EZ-Wheel / EZ-Way) to provide the hardware side:
 lidar on /laser_1/scan_filtered, /odom, TF odom -> base_link -> laser_1 and
@@ -49,11 +49,11 @@ def generate_launch_description():
     return LaunchDescription([
         # No default on purpose: the robot must use a map of the real building.
         DeclareLaunchArgument('map', description='Map yaml of the real building for AMCL'),
+        # No default either: one in install/ is overwritten by the next build, losing saved
+        # routes. Use an absolute path next to the map, e.g. /maps/<site>/routes.yaml.
         DeclareLaunchArgument(
             'routes_file',
-            default_value=os.path.join(
-                get_package_share_directory('my_bot'), 'config', 'routes.yaml'),
-            description='Routes file of the route_manager (read and written)'),
+            description='Routes file of the route_manager (read and written), absolute path'),
         DeclareLaunchArgument(
             'timing_file',
             default_value=os.path.join(
@@ -80,6 +80,9 @@ def generate_launch_description():
             output='screen'),
         Node(
             package='my_bot', executable='TurnDetectorNode.py', name='turn_detector',
+            output='screen'),
+        Node(
+            package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
             output='screen'),
         Node(
             package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',

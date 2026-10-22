@@ -489,6 +489,46 @@ Zien wat hij herkent: `turn_markers` (MarkerArray). In RViz staat het display
   draaien naar die kant.
 - Oranje bol met tekst (bv. `RECHTS 2.8 m`) op het pad: waar de bocht begint.
 
+### signal_manager: knipperlichten en buzzer
+
+`SignalManagerNode.py` (start mee met `sim.launch.py` en `robot.launch.py`):
+sources → `RobotFacts` → actuators → uitgangen (`my_bot/signal_manager/`).
+
+| Source | Topic | Feit |
+|---|---|---|
+| `TurnSource` | `/turn` | `turn`: komende bocht, anders draaien. Niet vers na `turn_timeout_s` (1 s) |
+| `RobotStateSource` | `/mission_status` | `mode`: `IDLE`, `DRIVING`, `BLOCKED`, `WAITING_OPERATOR`, `ARRIVED`, `ERROR` |
+| `CollisionStateSource` | `navigation/blocked` | `collision`: `NONE` / `BLOCKED` |
+
+| Actuator | Gedrag | Uitgang |
+|---|---|---|
+| `Blinkers` | `gevaar` bij blokkade, `WAITING_OPERATOR`/`ERROR`, of tijdens `DRIVING` een source die niet vers is; anders `links`/`rechts` bij een bocht (brandt `hold_s` = 1 s na); anders `uit` | `/indicators` (bij verandering) |
+| `Horn` | `elke_5s` zolang de route geblokkeerd is, daarna `uit`; anders `enkel` bij vertrek en aankomst, `dubbel` bij `WAITING_OPERATOR`/`ERROR` | `/buzzer_pattern` (bij verandering) |
+
+Buzzerpatronen op `/buzzer_pattern` (`std_msgs/String`); de ontvanger speelt ze af:
+
+| Patroon | Betekenis |
+|---|---|
+| `enkel` | één piep |
+| `dubbel` | twee piepjes |
+| `elke_5s` | elke 5 s een piep, tot een ander patroon komt |
+| `uit` | herhalend patroon stoppen |
+
+`mqtt_hmi_bridge` zet `/indicators` om naar MQTT (`robot/outputs/lamp_links`,
+`lamp_rechts`). `/buzzer_pattern` gaat nog niet naar MQTT: de bridge kent alleen het
+oude `/buzzer` (`Bool`, aan/uit). De actuators bepalen alleen hun toestand; het
+versturen zit in de node, zodat dat later direct via MQTT kan.
+
+```bash
+ros2 topic echo /indicators
+ros2 topic echo /buzzer_pattern std_msgs/msg/String
+```
+
+Vertrek- en aankomstpiep komen van `/mission_status`, dus alleen bij `start_route`
+(MissionManager), niet bij een route vanuit het RViz-paneel.
+
+> Start `indicator_node.py` niet tegelijk: die publiceert op dezelfde topics.
+
 ### indicator_node, mqtt_hmi_bridge, environment_speed_node
 
 Deze nodes luisteren nog naar de topics van de oude `patrol_node`
@@ -522,7 +562,7 @@ Start hetzelfde als `sim.launch.py`, maar zonder Gazebo en RViz en met
 | Argument | Standaard |
 |---|---|
 | `map` | — (verplicht) |
-| `routes_file` | `share/my_bot/config/routes.yaml` — **opgeslagen routes zijn weg na de volgende build**; geef een pad buiten `install/` |
+| `routes_file` | — (verplicht) — absoluut pad buiten `install/`, bv. `/maps/<locatie>/routes.yaml` |
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
 | `foxglove` | `true` |
 

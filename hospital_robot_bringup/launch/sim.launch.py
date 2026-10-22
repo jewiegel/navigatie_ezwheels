@@ -17,8 +17,8 @@ Gazebo test of the hospital behavior tree.
 
 Starts the hospital world (my_bot/launch_sim.launch.py), RViz, AMCL on the
 hospital map, Nav2 with the hospital behavior tree (navigation.launch.py), the
-route_manager, the MissionManagerNode, the turn_detector and optionally the
-foxglove_bridge.
+route_manager, the MissionManagerNode, the turn_detector, the signal_manager and
+optionally the foxglove_bridge.
 """
 
 import os
@@ -93,6 +93,9 @@ def generate_launch_description():
                 output='screen', parameters=[{'use_sim_time': True}]),
             Node(
                 package='my_bot', executable='TurnDetectorNode.py', name='turn_detector',
+                output='screen', parameters=[{'use_sim_time': True}]),
+            Node(
+                package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
                 output='screen', parameters=[{'use_sim_time': True}]),
         ]),
     ])

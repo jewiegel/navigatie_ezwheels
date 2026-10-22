@@ -17,8 +17,8 @@ export ROS_LOG_DIR=/tmp
 source <workspace>/install/setup.bash
 
 ros2 launch hospital_robot_bringup robot.launch.py \
-  map:=/maps/ziekenhuis_a/map.yaml \
-  routes_file:=maps/Improvia_zolder.yaml
+  map:=maps/Improvia_zolder.yaml \
+  routes_file:=maps/routes/zolder_routes.yaml
 ```
 
 Daarna: beginpositie zetten (stap 5) → route maken of kiezen (stap 7) → `start_route`.
@@ -125,7 +125,7 @@ ros2 launch hospital_robot_bringup robot.launch.py \
 | Argument | Standaard | Betekenis |
 |---|---|---|
 | `map` | — **verplicht** | Kaart van de locatie (`.yaml`) |
-| `routes_file` | `share/my_bot/config/routes.yaml` | Routes van de locatie. **Altijd opgeven**: de standaard staat in `install/` en wordt bij de volgende build overschreven, dus opgeslagen routes zijn dan weg |
+| `routes_file` | — **verplicht** | Routes van de locatie, **absoluut pad** (bv. `/maps/ziekenhuis_a/routes.yaml`). Een relatief pad hangt af van de map waar je start, dus dan lees en schrijf je steeds een ander bestand. Het volledige pad staat bij het starten in de log: `Routes uit /maps/...` |
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` | Tijden (zie stap 9) |
 | `foxglove` | `true` | `false` = geen foxglove_bridge |
 
@@ -309,7 +309,7 @@ daarna eventueel de EZ-Way-software terug in automatic mode.
 | `start_route`: `Service /get_route niet beschikbaar` | route_manager draait niet (log van de launch bekijken) |
 | `start_route`: `Onbekende route` | Naam staat niet in het `routes_file` van deze locatie |
 | `start_route`: `Kan niet starten in WAITING_OPERATOR` | Eerst `cancel_mission` |
-| Opgeslagen routes weg na een build | `routes_file:=` niet opgegeven (standaard staat in `install/`) |
+| Opgeslagen routes weg na een build of herstart | Relatief `routes_file` (zie waarschuwing in de log van de route_manager), of het bestand staat niet op een volume dat de container overleeft. Kijk in de log welk pad hij gebruikt: `Routes uit ...` en `opgeslagen ... in ...` |
 | Geklikte pose komt niet in de concept-route | Display frame niet `map`, of verkeerd topic (`/route_draft/add_pose`) |
 | `navigation/blocked = true` zonder obstakel | Robot schoot 10 s geen 0,5 m op (bv. vast op een drempel); controleer de log van `controller_server` |
 | Robot blijft "geblokkeerd" bij één waypoint | Waypoint te dicht bij een muur of in een obstakel → `cancel_mission`, waypoint verplaatsen |
