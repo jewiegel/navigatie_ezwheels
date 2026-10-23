@@ -15,6 +15,7 @@ Interface:
 Parameters:
   hold_s          zo lang brandt het knipperlicht na als er geen bocht meer is  (1.0)
   turn_timeout_s  ouder turn-bericht is niet vers (turn_detector gestopt)       (1.0)
+  at_turn_m       dichterbij de bocht telt het echte draaien voor de komende bocht (0.5)
   rate_hz         hoe vaak RobotFacts en de actuators bijgewerkt worden         (10.0)
 """
 import rclpy
@@ -38,9 +39,10 @@ class SignalManagerNode(Node):
         super().__init__('signal_manager')
         hold_s = self.declare_parameter('hold_s', 1.0).value
         turn_timeout_s = self.declare_parameter('turn_timeout_s', 1.0).value
+        at_turn_m = self.declare_parameter('at_turn_m', 0.5).value
         rate_hz = self.declare_parameter('rate_hz', 10.0).value
 
-        turn = TurnSource(turn_timeout_s)
+        turn = TurnSource(turn_timeout_s, at_turn_m)
         state = RobotStateSource()
         collision = CollisionStateSource()
         self.sources = [turn, state, collision]

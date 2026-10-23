@@ -27,20 +27,38 @@ def facts(**kwargs):
 
 class TestSources(unittest.TestCase):
 
-    def test_turn_komende_bocht_gaat_voor_draaien(self):
-        source = TurnSource(timeout_s=1.0)
-        source.update(SimpleNamespace(direction=LEFT, turning=RIGHT), 0.0)
-        f = RobotFacts()
+    def turn(self, direction, turning, distance=0.0):
+        source, f = TurnSource(timeout_s=1.0, at_turn_m=0.5), RobotFacts()
+        source.update(SimpleNamespace(direction=direction, turning=turning,
+                                      distance=distance), 0.0)
         source.apply(f)
-        self.assertEqual(f.turn, LEFT)
-        source.update(SimpleNamespace(direction=NONE, turning=RIGHT), 0.0)
-        source.apply(f)
-        self.assertEqual(f.turn, RIGHT)
+        return f.turn
+
+    def test_turn_onderweg_gaat_komende_bocht_voor(self):
+        # Stuurcorrectie naar rechts op 2 m voor een linkse bocht: blijft links.
+        self.assertEqual(self.turn(LEFT, RIGHT, distance=2.0), LEFT)
+
+    def test_turn_bij_de_bocht_gaat_draaien_voor(self):
+        # Op het waypoint eerst rechtsom naar de yaw, daarna pas links de bocht in.
+        self.assertEqual(self.turn(LEFT, RIGHT, distance=0.0), RIGHT)
+        self.assertEqual(self.turn(LEFT, NONE, distance=0.0), LEFT)    # draait (nog) niet
+
+    def test_turn_korte_dip_in_draaien_springt_niet_om(self):
+        source, f = TurnSource(timeout_s=1.0, at_turn_m=0.5, turning_hold_s=1.0), RobotFacts()
+        for now, turning, expected in ((0.0, RIGHT, RIGHT), (0.4, NONE, RIGHT),
+                                       (0.8, RIGHT, RIGHT), (2.0, NONE, LEFT)):
+            source.update(SimpleNamespace(direction=LEFT, turning=turning, distance=0.0), now)
+            source.apply(f)
+            self.assertEqual(f.turn, expected, now)
+
+    def test_turn_zonder_bocht_alleen_draaien(self):
+        self.assertEqual(self.turn(NONE, RIGHT), RIGHT)
+        self.assertEqual(self.turn(NONE, NONE), NONE)
 
     def test_turn_versheid(self):
         source = TurnSource(timeout_s=1.0)
         self.assertFalse(source.is_fresh(0.0))      # nog niets ontvangen
-        source.update(SimpleNamespace(direction=NONE, turning=NONE), 10.0)
+        source.update(SimpleNamespace(direction=NONE, turning=NONE, distance=0.0), 10.0)
         self.assertTrue(source.is_fresh(10.5))
         self.assertFalse(source.is_fresh(11.5))
 
