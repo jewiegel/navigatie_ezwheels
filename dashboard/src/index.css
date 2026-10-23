@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #0f1115;
+  --color-panel: #171a21;
+  --color-border: #262a33;
+  --color-muted: #8b93a3;
+  --color-accent: #4f8cff;
+  --color-ok: #22c55e;
+  --color-warn: #f59e0b;
+  --color-err: #ef4444;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-surface text-slate-100 antialiased; font-family: Inter, system-ui, sans-serif; }
