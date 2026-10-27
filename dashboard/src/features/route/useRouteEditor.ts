@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MapOverlay, MapPointerEvent, MapViewApi, NavStatus, Point, RouteEditor, Waypoint } from '../../types';
+import type { MapOverlay, MapPointerEvent, MapViewApi, NavStatus, Point, Pose2D, RouteEditor, Waypoint } from '../../types';
 import { useAction } from '../../ros';
 import { rosTimeNow } from '../../ros/convert';
 import {
   addWaypoint,
   hitTest,
+  loadWaypoints,
   isGoalBusy,
   moveWaypoint,
   navStatusFromFeedback,
@@ -103,6 +104,8 @@ export function useRouteEditor(): RouteEditor {
       remove: (id: string) => edit((l) => removeWaypoint(l, id)),
       reorder: (from: number, to: number) => edit((l) => reorderWaypoints(l, from, to)),
       clear: () => edit(() => []),
+      // redraw follows from the waypoints effect
+      load: (points: Pose2D[]) => edit(() => loadWaypoints(points)),
     };
   }, []);
 

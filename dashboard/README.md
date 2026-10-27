@@ -44,6 +44,12 @@ Gebruik `?ros=ws://<robot-ip>:9090` in de URL om met een andere robot te verbind
 | `/battery_state` | sensor_msgs/BatteryState | lezen; er is nog geen publisher |
 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | lezen |
 | `/odom` | nav_msgs/Odometry | lezen |
+| `/list_routes`, `/get_route`, `/set_route`, `/delete_route` | my_bot_interfaces/srv/* | service (route_manager) |
+| `/start_route`, `/cancel_mission` | StartRoute, std_srvs/Trigger | service (mission_manager) |
+| `/indicators` | std_msgs/String (latched) | lezen |
+| `/buzzer_pattern` | std_msgs/String (events) | lezen |
+| `/turn` | my_bot_interfaces/Turn | lezen |
+| `/hmi/mqtt_connected` | std_msgs/Bool (latched) | lezen |
 
 ## Bekende beperkingen
 

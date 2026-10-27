@@ -7,10 +7,11 @@ Interface:
   sub  turn                (my_bot_interfaces/Turn)            TurnSource
   sub  mission_status      (std_msgs/String)                   RobotStateSource
   sub  navigation/blocked  (std_msgs/Bool, transient_local)    CollisionStateSource
-  pub  indicators          (std_msgs/String)  'links', 'rechts', 'gevaar' of 'uit', bij elke
+  pub  indicators          (std_msgs/String, transient_local)  'links', 'rechts', 'gevaar' of 'uit', bij elke
        verandering; mqtt_hmi_bridge zet dit om naar de lampen
   pub  buzzer_pattern      (std_msgs/String)  buzzerpatroon van Horn: 'enkel', 'dubbel',
-       'elke_5s' of 'uit' (zie HornPattern); de ontvanger speelt het af
+       'elke_5s' of 'uit' (zie HornPattern); de ontvanger speelt het af. Bewust volatile:
+       'enkel'/'dubbel' zijn eenmalig, een late ontvanger mag geen oude piep naspelen
 
 Parameters:
   hold_s          zo lang brandt het knipperlicht na als er geen bocht meer is  (1.0)
@@ -55,7 +56,9 @@ class SignalManagerNode(Node):
         self.create_subscription(
             Bool, 'navigation/blocked', lambda m: collision.update(m, self._now()),
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
-        self.indicator_pub = self.create_publisher(String, 'indicators', 10)
+        # transient_local: een later verbonden dashboard ziet meteen de huidige stand
+        self.indicator_pub = self.create_publisher(
+            String, 'indicators', QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.buzzer_pub = self.create_publisher(String, 'buzzer_pattern', 10)
         self._published_state = None
 

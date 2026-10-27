@@ -7,8 +7,11 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Turn.msg"
   "msg/Waypoint.msg"
+  "srv/DeleteRoute.srv"
   "srv/GetRoute.srv"
+  "srv/ListRoutes.srv"
   "srv/SaveRoute.srv"
+  "srv/SetRoute.srv"
   "srv/StartRoute.srv"
 )
 

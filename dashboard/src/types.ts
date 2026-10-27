@@ -198,9 +198,47 @@ export interface RouteEditor {
   remove(id: string): void;
   reorder(from: number, to: number): void;
   clear(): void;
+  /** Replace the whole list (e.g. a saved route loaded from route_manager); yaws are kept as given. */
+  load(points: Pose2D[]): void;
   send(): void;
   cancel(): void;
 }
+
+// ---------- saved routes (route_manager in this repo, my_bot_interfaces) ----------
+
+/** my_bot_interfaces/msg/Waypoint: map frame, metres, yaw in rad. */
+export interface RouteWaypointMsg {
+  name: string;
+  x: number;
+  y: number;
+  yaw: number;
+}
+
+// Services (absolute names, all served by route_manager unless noted):
+//   /list_routes   my_bot_interfaces/srv/ListRoutes   {}                          → { success, message, names: string[] }
+//   /get_route     my_bot_interfaces/srv/GetRoute     { name }                    → { success, message, map_id, waypoints: RouteWaypointMsg[] }
+//   /set_route     my_bot_interfaces/srv/SetRoute     { name, waypoints, overwrite } → { success, message }
+//   /delete_route  my_bot_interfaces/srv/DeleteRoute  { name }                    → { success, message }
+//   /start_route   my_bot_interfaces/srv/StartRoute   { route_name }              → { accepted, message }   (mission_manager)
+//   /cancel_mission std_srvs/srv/Trigger              {}                          → { success, message }    (mission_manager)
+
+// ---------- robot signals (signal_manager / hmi_bridge in this repo) ----------
+
+/** /indicators (std_msgs/String), latched. */
+export type IndicatorState = 'links' | 'rechts' | 'gevaar' | 'uit';
+/** /buzzer_pattern (std_msgs/String), volatile events (a latched one-shot would replay stale); 'elke_5s' repeats until 'uit'. */
+export type BuzzerPattern = 'enkel' | 'dubbel' | 'elke_5s' | 'uit';
+/** /turn (my_bot_interfaces/msg/Turn); direction/turning: 0 NONE, 1 LEFT, 2 RIGHT. */
+export interface TurnMsg {
+  direction: number;
+  distance: number;
+  angle: number;
+  turning: number;
+}
+
+// Feature exports added for the layout:
+//   src/features/routes/index.ts   → RouteLibraryPanel({ editor: RouteEditor })
+//   src/features/signals/index.ts  → SignalsPanel()
 
 // Feature exports the layout (App.tsx) relies on:
 //   src/features/map/index.ts     → MapView

@@ -153,3 +153,15 @@ describe('navStatusFromFeedback', () => {
     expect(navStatusFromFeedback('aborted', 2, null).message).toBeTruthy();
   });
 });
+
+describe('loadWaypoints', () => {
+  it('keeps given x/y/yaw exactly (no recompute) and assigns unique ids', async () => {
+    const { loadWaypoints } = await import('../src/features/route/routeLogic');
+    const pts = [{ x: 0, y: 0, yaw: 1.5 }, { x: 1, y: 0, yaw: -3 }, { x: 1, y: 0, yaw: 0.25 }];
+    const l = loadWaypoints(pts);
+    expect(l.map(({ x, y, yaw }) => ({ x, y, yaw }))).toEqual(pts);
+    expect(new Set(ids(l)).size).toBe(3);
+    expect(new Set([...ids(l), ...ids(loadWaypoints(pts))]).size).toBe(6);
+    expect(loadWaypoints([])).toEqual([]);
+  });
+});

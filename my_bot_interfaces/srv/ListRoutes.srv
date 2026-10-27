@@ -1,0 +1,5 @@
+# Namen van alle opgeslagen routes van de route_manager (gesorteerd).
+---
+bool success
+string message
+string[] names

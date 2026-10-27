@@ -1,4 +1,4 @@
-import type { GoalStatus, MapViewApi, NavStatus, Point, PoseStamped, ScreenPoint, Time, Waypoint } from '../../types';
+import type { GoalStatus, MapViewApi, NavStatus, Point, Pose2D, PoseStamped, ScreenPoint, Time, Waypoint } from '../../types';
 import { yawToQuaternion } from '../../ros/convert';
 
 export interface Duration {
@@ -40,6 +40,11 @@ export function computeYaws(list: Waypoint[]): Waypoint[] {
   for (let k = 0; k < n - 1; k++) yaws.push(seg[k] ?? (k > 0 ? yaws[k - 1] : firstValid));
   yaws.push(yaws[n - 2]);
   return list.map((w, k) => ({ ...w, yaw: yaws[k] }));
+}
+
+/** Replace the list with saved poses: fresh ids, yaws kept exactly as given (no recompute). */
+export function loadWaypoints(points: Pose2D[]): Waypoint[] {
+  return points.map((p) => ({ id: newId(), x: p.x, y: p.y, yaw: p.yaw }));
 }
 
 export function addWaypoint(list: Waypoint[], p: Point, id: string = newId()): Waypoint[] {

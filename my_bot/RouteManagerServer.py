@@ -4,7 +4,10 @@ maakt nieuwe routes door waypoints aan te klikken (concept-route).
 
 Interface:
   service  get_route             (my_bot_interfaces/srv/GetRoute)   route op naam
-  topic    route_preview         (geometry_msgs/PoseArray)          laatst opgevraagde route tonen
+  service  list_routes           (my_bot_interfaces/srv/ListRoutes) namen van alle routes
+  service  delete_route          (my_bot_interfaces/srv/DeleteRoute) route op naam verwijderen
+  service  set_route             (my_bot_interfaces/srv/SetRoute)   complete route opslaan
+  topic    route_preview         (geometry_msgs/PoseArray)          laatst opgevraagde/opgeslagen route
   topic    route_draft/add_pose  (geometry_msgs/PoseStamped, map)   waypoint toevoegen
   topic    route_draft/poses     (geometry_msgs/PoseArray)          concept-route tonen
   service  route_draft/undo      (std_srvs/srv/Trigger)             laatste waypoint weg
@@ -27,9 +30,29 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_srvs.srv import Trigger
 
 from my_bot_interfaces.msg import Waypoint as WaypointMsg
-from my_bot_interfaces.srv import GetRoute, SaveRoute
-from route_manager import RouteDraft
+from my_bot_interfaces.srv import DeleteRoute, GetRoute, ListRoutes, SaveRoute, SetRoute
+from route_manager import Route, RouteDraft
 from route_manager.repositories import YamlRouteRepository
+
+
+def build_route(name: str, map_id: str, waypoints) -> Route:
+    """Route uit losse waypoints (met .name/.x/.y/.yaw), met dezelfde controles als de
+    concept-route. Een lege waypointnaam wordt <naam>_<nr>, zoals RouteDraft.build."""
+    draft = RouteDraft()
+    for w in waypoints:
+        draft.add(w.x, w.y, w.yaw)
+    route = draft.build(name, map_id)
+    for built, given in zip(route.waypoints, waypoints):
+        built.name = given.name or built.name
+    return route
+
+
+def store_route(repository, route: Route, overwrite: bool) -> None:
+    """Opslaan; ValueError als de naam al bestaat en overwrite uit staat."""
+    if not overwrite and route.name in repository.list():
+        raise ValueError(
+            f'Route "{route.name}" bestaat al; kies een andere naam of overwrite: true')
+    repository.save(route)
 
 
 class RouteManagerServer(Node):
@@ -48,6 +71,9 @@ class RouteManagerServer(Node):
         self.map_id = self.declare_parameter('map_id', 'ziekenhuis').value
         self.repository = YamlRouteRepository(routes_file)
         self.create_service(GetRoute, 'get_route', self.on_get_route)
+        self.create_service(ListRoutes, 'list_routes', self.on_list_routes)
+        self.create_service(DeleteRoute, 'delete_route', self.on_delete_route)
+        self.create_service(SetRoute, 'set_route', self.on_set_route)
         # transient_local: een later geopend RViz/Foxglove ziet de laatste waarde meteen
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.preview_pub = self.create_publisher(PoseArray, 'route_preview', latched)
@@ -88,6 +114,47 @@ class RouteManagerServer(Node):
         self.get_logger().info(f'Route "{route.name}" geleverd ({len(route.waypoints)} waypoints)')
         return res
 
+    def on_list_routes(self, req, res):
+        try:
+            res.names = self.repository.list()
+        except Exception as e:  # o.a. OSError, yaml.YAMLError, ValueError
+            res.success, res.message = False, f'Routebestand niet leesbaar: {e}'
+            self.get_logger().error(res.message)
+            return res
+        res.success, res.message = True, f'{len(res.names)} routes'
+        return res
+
+    def on_delete_route(self, req, res):
+        try:
+            self.repository.delete(req.name)
+        except KeyError:
+            res.success = False
+            res.message = f'Onbekende route "{req.name}"; beschikbaar: {self._available()}'
+            self.get_logger().warn(res.message)
+            return res
+        except Exception as e:  # o.a. OSError, yaml.YAMLError, ValueError
+            res.success, res.message = False, f'Route "{req.name}" niet te verwijderen: {e}'
+            self.get_logger().error(res.message)
+            return res
+        res.success, res.message = True, f'Route "{req.name}" verwijderd uit {self.routes_file}'
+        self.get_logger().info(res.message)
+        return res
+
+    def on_set_route(self, req, res):
+        try:
+            route = build_route(req.name, self.map_id, req.waypoints)
+            store_route(self.repository, route, req.overwrite)
+        except Exception as e:  # o.a. ValueError, OSError
+            res.success, res.message = False, str(e)
+            self.get_logger().warn(f'Opslaan mislukt: {e}')
+            return res
+        self.preview_pub.publish(self._pose_array(route.waypoints))
+        res.success = True
+        res.message = (f'Route "{route.name}" opgeslagen ({len(route.waypoints)} waypoints) '
+                       f'in {self.routes_file}')
+        self.get_logger().info(res.message)
+        return res
+
     # ── Concept-route ─────────────────────────────────────────────────────────
 
     def on_add_pose(self, msg: PoseStamped):
@@ -125,10 +192,7 @@ class RouteManagerServer(Node):
     def on_save(self, req, res):
         try:
             route = self.draft.build(req.name, self.map_id)
-            if not req.overwrite and req.name in self.repository.list():
-                raise ValueError(
-                    f'Route "{req.name}" bestaat al; kies een andere naam of overwrite: true')
-            self.repository.save(route)
+            store_route(self.repository, route, req.overwrite)
         except Exception as e:  # o.a. ValueError, OSError
             res.success, res.message = False, str(e)
             self.get_logger().warn(f'Opslaan mislukt: {e}')

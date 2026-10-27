@@ -1,0 +1,7 @@
+# Complete route in één keer opslaan bij de route_manager (zonder concept-route).
+string name                              # letters, cijfers, _ en -
+my_bot_interfaces/Waypoint[] waypoints   # lege waypointnaam = <naam>_<nr>
+bool overwrite                           # true = bestaande route met deze naam vervangen
+---
+bool success
+string message

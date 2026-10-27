@@ -1,0 +1,5 @@
+# Opgeslagen route van de route_manager verwijderen.
+string name
+---
+bool success
+string message

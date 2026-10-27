@@ -3,6 +3,8 @@ import { MapView } from './features/map';
 import { useRobotOverlay } from './features/robot';
 import { RoutePanel, useRouteEditor } from './features/route';
 import { ConnectionBadge, StatusPanel } from './features/status';
+import { RouteLibraryPanel } from './features/routes';
+import { SignalsPanel } from './features/signals';
 
 function Dashboard() {
   const robot = useRobotOverlay();
@@ -24,6 +26,8 @@ function Dashboard() {
         </main>
         <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto border-t border-border bg-surface p-4 lg:w-96 lg:border-l lg:border-t-0">
           <StatusPanel nav={route.nav} />
+          <SignalsPanel />
+          <RouteLibraryPanel editor={route} />
           <RoutePanel editor={route} />
         </aside>
       </div>
