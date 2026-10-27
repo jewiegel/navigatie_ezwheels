@@ -21,6 +21,15 @@ ros2 launch hospital_robot_bringup robot.launch.py \
 
 Daarna: beginpositie zetten → route maken of kiezen → `start_route`.
 
+Met het webdashboard (stap 6) erbij, in een tweede terminal in dezelfde container:
+
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml   # ws://<robot>:9090
+```
+
+en op je laptop `cd dashboard && npm run dev`, dan
+`http://localhost:5173/?ros=ws://<ip-van-de-robot>:9090` openen.
+
 ## 1. Voorwaarden
 
 | Onderdeel | Door | |
@@ -106,7 +115,69 @@ Verbinden: **Foxglove WebSocket → `ws://<ip-van-de-robot>:8765`**. Handige lay
 | **Raw Messages** | `/mission_status`, `/indicators` |
 | **Indicator** | `/navigation/blocked` (`.data`) |
 
-## 6. Rijden
+## 6. Webdashboard
+
+Een website ([dashboard/](dashboard/)) voor de kaart, routes, de huidige missie en de
+signalen. Hij praat via **rosbridge** (poort 9090) met de robot, naast Foxglove.
+
+### Eenmalig
+
+- **rosbridge op de robot.** De EZ-Way-image heeft het niet. Installeer
+  `ros-iron-rosbridge-suite` in de container; een losse `apt install` is na een herstart
+  van de container weg, dus laat het in de image opnemen of herhaal het:
+  ```bash
+  apt-get update && apt-get install -y ros-iron-rosbridge-suite
+  ```
+- **Node.js (≥ 20) op je laptop**, dan in `dashboard/`: `npm install`.
+- **Bouwen met de nieuwe services** (`list_routes`, `set_route`, `delete_route`): de
+  bouwopdracht van stap 2 neemt `my_bot_interfaces` en `my_bot` al mee.
+
+### Starten (elke keer)
+
+1. **Robot:** `robot.launch.py` zoals in stap 4. route_manager en mission_manager moeten
+   draaien; zonder krijg je in het dashboard "Service … niet beschikbaar".
+2. **rosbridge**, in een tweede terminal in de container (zelfde `CYCLONEDDS_URI`, en
+   eerst `source install/setup.bash`, anders kent rosbridge de eigen msg/srv-types niet):
+   ```bash
+   ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+   ```
+   Klaar bij `Rosbridge WebSocket server started on port 9090`.
+3. **Dashboard**, op je laptop:
+   ```bash
+   cd dashboard && npm run dev
+   ```
+   Open `http://localhost:5173/?ros=ws://<ip-van-de-robot>:9090`. Rechtsboven moet
+   **Verbonden** staan, daarna verschijnt de kaart.
+
+   Zonder Node op de laptop: bouw één keer (`npm run build`), kopieer `dashboard/dist/`
+   naar de robot en serveer het daar met `python3 -m http.server 8080 --directory dist`;
+   open dan `http://<ip-van-de-robot>:8080` (de pagina verbindt vanzelf met poort 9090
+   van dezelfde host).
+
+### Gebruik
+
+| Paneel | Wat |
+|---|---|
+| **Kaart** | slepen = pannen, scrollen = zoomen; klik = waypoint, sleep = verplaatsen, rechtsklik = verwijderen |
+| **Opgeslagen routes** | kiezen (laadt op de kaart), opslaan, verwijderen, **Start route** / **Stop missie** via mission_manager |
+| **Huidige missie** | status, voortgang (`x van n waypoints`), blokkade, afstand en rijtijd |
+| **Signalen** | knipperlichten, buzzer, komende bocht, HMI-verbinding |
+| **Status** | verbinding, snelheid, batterij, diagnostics |
+
+- Start routes met **Start route** in "Opgeslagen routes". De knop **Verstuur naar
+  Nav2** in de route-editor stuurt direct naar Nav2, buiten mission_manager om: lampen,
+  HMI en `cancel_mission` weten daar niets van, en een lopende route wordt afgebroken.
+- rosbridge heeft **geen login**: iedereen die poort 9090 bereikt kan de robot
+  besturen. Alleen op een afgeschermd netwerk gebruiken.
+
+### Simulatie
+
+Zelfde stappen in de `ros2_iron`-container (rosbridge staat in `~/ros2_docker/Dockerfile`;
+na `docker build -t mijn_ros2_iron ~/ros2_docker` zit het vast in de image):
+`sim.launch.py` in plaats van `robot.launch.py`, en op de host `npm run dev` met
+gewoon `http://localhost:5173` (de container draait met `--net=host`).
+
+## 7. Rijden
 
 ```bash
 ros2 service call /start_route my_bot_interfaces/srv/StartRoute "{route_name: gang_a}"
@@ -126,7 +197,7 @@ ros2 service call /cancel_mission std_srvs/srv/Trigger
 - Losse doelen: Foxglove **Publish → Pose** op `/goal_pose` (ander topic dan voor routes).
 - Stoppen: **Ctrl+C**. Een `KeyboardInterrupt`-traceback bij het afsluiten is onschuldig.
 
-## 7. Knipperlichten, buzzer en HMI
+## 8. Knipperlichten, buzzer en HMI
 
 De signal_manager en hmi_bridge sturen de lampen en buzzer van de HMI via MQTT
 (protocol: [StartenSImulatie.md](StartenSImulatie.md) stap 5). De bridge laat de
@@ -137,7 +208,7 @@ mosquitto_sub -v -t 'robot/#'
 ros2 topic echo /hmi/mqtt_connected --qos-durability transient_local
 ```
 
-## 8. Instellingen
+## 9. Instellingen
 
 - `hospital_robot_bringup/config/timing.yaml`: `progress_timeout_s` (10 s zonder 0,5 m
   voortgang → blokkade) en `blockade_wait_s` (10 s tussen twee checks).
@@ -160,3 +231,8 @@ ros2 topic echo /hmi/mqtt_connected --qos-durability transient_local
 | Robot blijft "geblokkeerd" bij één waypoint | Waypoint te dicht bij een muur: `cancel_mission`, waypoint verplaatsen |
 | HMI-lampen reageren niet | `MQTT verbonden` niet in de log van de hmi_bridge: andere `hmi_broker` opgeven |
 | Foxglove verbindt niet | `foxglove:=false`, bridge niet geïnstalleerd, of verkeerd IP |
+| Dashboard blijft op "Verbinden…" | rosbridge draait niet, verkeerd IP in `?ros=`, of poort 9090 dicht |
+| `package 'rosbridge_server' not found` | rosbridge niet geïnstalleerd in deze container (stap 6, Eenmalig), of shell van vóór de installatie: opnieuw `source /opt/ros/iron/setup.bash` |
+| Dashboard verbonden, maar geen kaart | map_server nog niet actief; wacht of herlaad de pagina |
+| "Service /list_routes niet beschikbaar" | route_manager draait niet, of is van vóór de laatste build: launch herstarten |
+| Fout over onbekend type `my_bot_interfaces/...` | rosbridge gestart zonder `source install/setup.bash` |
