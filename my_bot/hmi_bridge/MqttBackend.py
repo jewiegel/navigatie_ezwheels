@@ -51,6 +51,7 @@ class MqttBackend(SignalBackend):
             client.subscribe(topic)
 
     def _on_message(self, client, userdata, msg):
+        self.log.info(f'HMI-bericht ontvangen: {msg.topic} = {msg.payload!r}')
         status = PayloadCodec.decode_status(msg.topic, msg.payload)
         if status is None:
             if msg.payload.strip() != b'0':     # "0" (knop los) is normaal

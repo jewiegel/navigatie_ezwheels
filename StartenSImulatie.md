@@ -150,8 +150,8 @@ die op de HMI werkte:
 | robot → HMI | `robot/outputs/lamp_links`, `lamp_rechts` | `1`/`0`, knipperend met `blink_period_s` (1 s); `gevaar` = beide |
 | robot → HMI | `robot/outputs/buzzer` | `1`/`0`, de bridge speelt het patroon af |
 | robot → HMI | `robot/patrol_state` | `idle`, `rijdend`, `wachten`, `voltooid`, `fout` |
-| HMI → robot | `robot/start_patrol` = `1` | `start_route` met `start_route_name` (leeg = niets) |
-| HMI → robot | `robot/stop_patrol` = `1` | `cancel_mission` |
+| HMI → robot | `robot/start` = `1` | `start_route` met `start_route_name` (leeg = niets) |
+| HMI → robot | `robot/stop` = `1` | `cancel_mission` |
 
 Alles gaat bij een verandering en elke `heartbeat_s` (1 s). `/hmi/mqtt_connected` is
 `false` als de broker langer dan 3 s weg is.
@@ -180,7 +180,7 @@ ros2 topic pub -t 3 --qos-durability transient_local navigation/blocked std_msgs
 docker run --rm -d --name mqtt_test --network host eclipse-mosquitto:2.0.18 mosquitto -c /mosquitto-no-auth.conf
 ros2 run my_bot HMIBridgeNode.py --ros-args -p use_sim_time:=true -p start_route_name:=gang_b
 docker exec mqtt_test mosquitto_sub -v -t 'robot/#'              # alles zien
-docker exec mqtt_test mosquitto_pub -t robot/start_patrol -m 1   # startknop
+docker exec mqtt_test mosquitto_pub -t robot/start -m 1   # startknop
 docker stop mqtt_test
 ```
 

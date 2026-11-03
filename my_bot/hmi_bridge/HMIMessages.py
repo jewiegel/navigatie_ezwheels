@@ -2,6 +2,7 @@
 """Berichten tussen robot en HMI, zonder ROS of MQTT."""
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,8 @@ class SignalCommand:
     blink_on: bool = True      # knipperfase: lampen van blinkers nu aan of uit
     buzzer_on: bool = False    # buzzer nu aan (BuzzerPlayer speelt het patroon af)
     mission: str = ''          # missietoestand, bv. 'DRIVING gang_a' (MissionManager)
+    battery: Optional[int] = None   # batterij in procent 0-100, None = (nog) onbekend
+    blocked: bool = False      # route geblokkeerd (navigation/blocked van de BT)
 
 
 @dataclass(frozen=True)
