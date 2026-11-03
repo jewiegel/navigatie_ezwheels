@@ -67,7 +67,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'hmi_broker', default_value='localhost', description='MQTT broker of the HMI'),
         DeclareLaunchArgument(
-            'hmi_start_route', default_value='',
+            'hmi_start_route', default_value='bruh',
             description='Route started by the HMI start button (empty: button does nothing)'),
 
         _include('my_bot', 'localization_launch.py', {

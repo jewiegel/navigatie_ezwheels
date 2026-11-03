@@ -22,7 +22,8 @@ class TestPayloadCodec(unittest.TestCase):
         out = PayloadCodec.encode_command(SignalCommand('links', True, True, 'DRIVING gang_a'))
         self.assertEqual(out, {
             'robot/outputs/lamp_links': b'1', 'robot/outputs/lamp_rechts': b'0',
-            'robot/outputs/buzzer': b'1', 'robot/patrol_state': b'rijdend'})
+            'robot/outputs/buzzer': b'1', 'robot/patrol_state': b'rijdend',
+            'robot/outputs/state_id': b'0'})
 
     def test_gevaar_is_beide_lampen(self):
         out = PayloadCodec.encode_command(SignalCommand(blinkers='gevaar'))
@@ -41,12 +42,24 @@ class TestPayloadCodec(unittest.TestCase):
             out = PayloadCodec.encode_command(SignalCommand(mission=mission))
             self.assertEqual(out['robot/patrol_state'], word)
 
+    def test_state_id_alleen_1_bij_geblokkeerd(self):
+        for mission, bit in (('BLOCKED gang_a', b'1'), ('DRIVING gang_a', b'0'), ('', b'0')):
+            out = PayloadCodec.encode_command(SignalCommand(mission=mission))
+            self.assertEqual(out['robot/outputs/state_id'], bit)
+        out = PayloadCodec.encode_command(SignalCommand(mission='DRIVING gang_a', blocked=True))
+        self.assertEqual(out['robot/outputs/state_id'], b'1')
+
+    def test_batterij(self):
+        self.assertNotIn('robot/outputs/batterij', PayloadCodec.encode_command(SignalCommand()))
+        out = PayloadCodec.encode_command(SignalCommand(battery=87))
+        self.assertEqual(out['robot/outputs/batterij'], b'87')
+
     def test_knoppen(self):
-        self.assertEqual(PayloadCodec.decode_status('robot/start_patrol', b'1'),
+        self.assertEqual(PayloadCodec.decode_status('robot/start', b'1'),
                          HMIStatus(start=True))
-        self.assertEqual(PayloadCodec.decode_status('robot/stop_patrol', b' 1\n'),
+        self.assertEqual(PayloadCodec.decode_status('robot/stop', b' 1\n'),
                          HMIStatus(stop=True))
-        self.assertIsNone(PayloadCodec.decode_status('robot/start_patrol', b'0'))
+        self.assertIsNone(PayloadCodec.decode_status('robot/start', b'0'))
         self.assertIsNone(PayloadCodec.decode_status('robot/iets', b'1'))
 
 

@@ -7,8 +7,12 @@ Robot -> HMI:
                                                          knipperend via blink_on
   robot/outputs/buzzer                                   "1"/"0"
   robot/patrol_state     'idle', 'rijdend', 'wachten', 'voltooid', 'fout'
+  robot/outputs/state_id                                 "1" als geblokkeerd (gevarenlicht + elke 5 s
+                                                         piep), anders "0"
+  robot/outputs/batterij                                 percentage als tekst, bv. "87"
+                                                         (niet gestuurd zolang onbekend)
 HMI -> robot:
-  robot/start_patrol, robot/stop_patrol                  "1" = knop ingedrukt
+  robot/start, robot/stop                                "1" = knop ingedrukt
 """
 
 from typing import Dict, Optional
@@ -19,8 +23,10 @@ TOPIC_LAMP_LEFT = 'robot/outputs/lamp_links'
 TOPIC_LAMP_RIGHT = 'robot/outputs/lamp_rechts'
 TOPIC_BUZZER = 'robot/outputs/buzzer'
 TOPIC_STATE = 'robot/patrol_state'
-TOPIC_START = 'robot/start_patrol'
-TOPIC_STOP = 'robot/stop_patrol'
+TOPIC_BATTERY = 'robot/outputs/batterij'
+TOPIC_STATE_ID = 'robot/outputs/state_id'
+TOPIC_START = 'robot/start'
+TOPIC_STOP = 'robot/stop'
 
 # MissionState -> statuswoorden die de HMI van de oude patrol_node kent
 PATROL_STATES = {
@@ -39,12 +45,16 @@ class PayloadCodec:
     def encode_command(cmd: SignalCommand) -> Dict[str, bytes]:
         """Payload per MQTT-topic."""
         state = cmd.mission.split(' ', 1)[0]
-        return {
+        out = {
             TOPIC_LAMP_LEFT: _bit(cmd.blink_on and cmd.blinkers in ('links', 'gevaar')),
             TOPIC_LAMP_RIGHT: _bit(cmd.blink_on and cmd.blinkers in ('rechts', 'gevaar')),
             TOPIC_BUZZER: _bit(cmd.buzzer_on),
             TOPIC_STATE: PATROL_STATES.get(state, state.lower() or 'idle').encode('utf-8'),
+            TOPIC_STATE_ID: _bit(cmd.blocked or state == 'BLOCKED'),
         }
+        if cmd.battery is not None:
+            out[TOPIC_BATTERY] = str(cmd.battery).encode('utf-8')
+        return out
 
     @staticmethod
     def decode_status(topic: str, payload: bytes) -> Optional[HMIStatus]:

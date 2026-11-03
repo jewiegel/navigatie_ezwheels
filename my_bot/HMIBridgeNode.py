@@ -11,6 +11,11 @@ Interface:
   sub  buzzer_pattern  (std_msgs/String)  buzzerpatroon van de signal_manager; de bridge
        speelt het af op de aan/uit-uitgang (BuzzerPlayer)
   sub  mission_status  (std_msgs/String)  missietoestand van de MissionManager
+  sub  navigation/blocked  (std_msgs/Bool, transient_local)  blokkade van de BT (zelfde
+       signaal als het elke-5s-piepen van de signal_manager) -> robot/outputs/state_id
+  sub  battery_state   (sensor_msgs/BatteryState)  -> robot/outputs/batterij als 0-100: uit de
+       spanning als battery_empty_v/battery_full_v gezet zijn, anders uit percentage (0-1)
+       als heel getal 0-100; remap naar het topic van de batterijdriver
   pub  hmi/mqtt_connected  (std_msgs/Bool, transient_local)  false als de MQTT-verbinding
        langer dan mqtt_timeout_s weg is (CommandWatchDog), bij elke verandering
   cli  start_route     (my_bot_interfaces/StartRoute)  startknop -> route start_route_name
@@ -23,12 +28,17 @@ Parameters:
   heartbeat_s       uitgangen opnieuw sturen als er niets verandert        (1.0)
   blink_period_s    knipperen: helft aan, helft uit                       (1.0)
   mqtt_timeout_s    zo lang zonder MQTT-verbinding = weg                   (3.0)
+  battery_empty_v   spanning bij 0 % (0 = percentage van de driver)       (0.0)
+  battery_full_v    spanning bij 100 %                                    (0.0)
   start_route_name  route voor de startknop; leeg = startknop doet niets  ('')
 """
+import math
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
@@ -51,6 +61,8 @@ class HMIBridgeNode(Node):
         self.blink_period_s = self.declare_parameter('blink_period_s', 1.0).value
         mqtt_timeout_s = self.declare_parameter('mqtt_timeout_s', 3.0).value
         self.start_route_name = self.declare_parameter('start_route_name', '').value
+        self.battery_empty_v = self.declare_parameter('battery_empty_v', 21.0).value
+        self.battery_full_v = self.declare_parameter('battery_full_v', 28.0).value
 
         if backend == 'memory':
             self.backend: SignalBackend = InMemoryBackend()
@@ -63,6 +75,8 @@ class HMIBridgeNode(Node):
         self._blinkers = 'uit'
         self._blink_since = 0.0         # begin van het huidige knipperlicht: start met aan
         self._mission = ''
+        self._blocked = False
+        self._battery = None            # procent 0-100, None = nog geen (geldige) meting
         self._sent_command = None       # laatst verstuurde SignalCommand
         self._sent_time = None
         self._status = None             # laatst verwerkte knopdruk
@@ -71,6 +85,10 @@ class HMIBridgeNode(Node):
         self.create_subscription(String, 'indicators', self.on_indicators, 10)
         self.create_subscription(String, 'buzzer_pattern', self.on_buzzer, 10)
         self.create_subscription(String, 'mission_status', self.on_mission, 10)
+        self.create_subscription(BatteryState, 'battery_state', self.on_battery, 10)
+        self.create_subscription(
+            Bool, 'navigation/blocked', self.on_blocked,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.connected_pub = self.create_publisher(
             Bool, 'hmi/mqtt_connected',
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
@@ -96,10 +114,23 @@ class HMIBridgeNode(Node):
     def on_mission(self, msg: String):
         self._mission = msg.data
 
+    def on_blocked(self, msg: Bool):
+        self._blocked = msg.data
+
+    def on_battery(self, msg: BatteryState):
+        if self.battery_full_v > self.battery_empty_v > 0:
+            # shortcut: lineair tussen leeg en vol; de echte ontlaadcurve is dat niet, gebruik
+            # een tabel als het percentage te veel verspringt
+            p = (msg.voltage - self.battery_empty_v) / (self.battery_full_v - self.battery_empty_v)
+        else:
+            p = msg.percentage      # 0-1, NaN als de driver het niet weet
+        self._battery = None if math.isnan(p) else round(min(max(p, 0.0), 1.0) * 100)
+
     def update(self):
         now = self._now()
         blink_on = (now - self._blink_since) % self.blink_period_s < self.blink_period_s / 2
-        command = SignalCommand(self._blinkers, blink_on, self.buzzer.is_on(now), self._mission)
+        command = SignalCommand(self._blinkers, blink_on, self.buzzer.is_on(now), self._mission,
+                                self._battery, self._blocked)
         if self.backend.is_connected() and (
                 command != self._sent_command or self._sent_time is None or
                 now - self._sent_time >= self.heartbeat_s):
