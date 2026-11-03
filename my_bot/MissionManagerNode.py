@@ -11,12 +11,16 @@ Interface:
   topic    mission_status  (std_msgs/msg/String)               toestand naar de UI
   client   get_route       (my_bot_interfaces/srv/GetRoute)    route_manager
   action   navigate_through_poses (nav2_msgs)
+  action   waypoint-acties uit de TaskRegistry (zie register_tasks), bv. wait en spin van Nav2
 """
+import math
 import threading
 from collections import deque
 
 import rclpy
 from action_msgs.msg import GoalStatus
+from builtin_interfaces.msg import Duration
+from nav2_msgs.action import Spin, Wait
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.lifecycle import Node, State, TransitionCallbackReturn
@@ -26,12 +30,28 @@ from std_srvs.srv import Trigger
 from my_bot_interfaces.srv import StartRoute
 from mission_manager import MissionEvent, MissionStateMachine
 from mission_manager.RouteServiceClient import RouteServiceClient
+from mission_manager.TaskRegistry import TaskRegistry
 from mission_manager.enums import MissionKind
 from mission_manager.ports import MissionPorts
 from mission_manager.ports.Nav2ActionClient import Nav2ActionClient
 from mission_manager.ports.Ros2Notifier import Ros2Notifier
+from mission_manager.ports.Ros2TaskExecutor import Ros2TaskExecutor
 
 BT_STATES = {'BLOCKED': MissionKind.BT_BLOCKED, 'DRIVING': MissionKind.BT_DRIVING}
+
+
+def _duration(seconds: float) -> Duration:
+    return Duration(sec=int(seconds), nanosec=int((seconds % 1) * 1e9))
+
+
+def register_tasks(registry: TaskRegistry) -> None:
+    """Acties die in routes.yaml onder actions: gebruikt kunnen worden. Nieuwe actie:
+    hier registreren met action-type, servernaam en een functie params -> doel."""
+    registry.register('wait', Wait, 'wait',
+                      lambda p: Wait.Goal(time=_duration(float(p.get('seconds', 1.0)))))
+    # Nav2 meet time_allowance in wandkloktijd; ruim, want Gazebo loopt trager dan echt.
+    registry.register('spin', Spin, 'spin', lambda p: Spin.Goal(
+        target_yaw=float(p.get('angle', 2 * math.pi)), time_allowance=_duration(30.0)))
 
 
 class MissionManagerNode(Node):
@@ -52,9 +72,12 @@ class MissionManagerNode(Node):
         # Reentrant: start_route wacht op get_route terwijl die callback ook moet draaien.
         cb = ReentrantCallbackGroup()
         self.route_client = RouteServiceClient(self, cb)
+        registry = TaskRegistry(self, cb)
+        register_tasks(registry)
         self.mission_ports = MissionPorts(
             nav=Nav2ActionClient(self, self.on_nav_result, cb),
-            ui=Ros2Notifier(self))
+            ui=Ros2Notifier(self),
+            tasks=Ros2TaskExecutor(self, registry, self.on_task_result))
         self.create_service(StartRoute, 'start_route', self.on_start_route, callback_group=cb)
         self.create_service(Trigger, 'cancel_mission', self.on_cancel, callback_group=cb)
         self.create_subscription(String, 'bt_state', self.on_bt_state, 10, callback_group=cb)
@@ -109,6 +132,10 @@ class MissionManagerNode(Node):
             self.get_logger().warn(f'Nav2 doel mislukt (status {future.result().status})')
         kind = MissionKind.NAV_SUCCEEDED if succeeded else MissionKind.NAV_ABORTED
         self._dispatch(MissionEvent(kind))
+
+    def on_task_result(self, succeeded: bool):
+        self._dispatch(MissionEvent(
+            MissionKind.TASK_SUCCEEDED if succeeded else MissionKind.TASK_FAILED))
 
     # ── Intern ────────────────────────────────────────────────────────────────
 

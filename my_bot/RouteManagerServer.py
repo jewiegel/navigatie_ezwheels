@@ -15,6 +15,7 @@ Parameters:
   routes_file  YAML met routes (standaard share/my_bot/config/routes.yaml)
   map_id       kaart-id voor opgeslagen routes (standaard ziekenhuis)
 """
+import json
 import math
 import os
 
@@ -26,7 +27,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_srvs.srv import Trigger
 
-from my_bot_interfaces.msg import Waypoint as WaypointMsg
+from my_bot_interfaces.msg import Waypoint as WaypointMsg, WaypointAction
 from my_bot_interfaces.srv import GetRoute, SaveRoute
 from route_manager import RouteDraft
 from route_manager.repositories import YamlRouteRepository
@@ -84,7 +85,10 @@ class RouteManagerServer(Node):
         res.success = True
         res.map_id = route.map_id
         res.waypoints = [
-            WaypointMsg(name=w.name, x=w.x, y=w.y, yaw=w.yaw) for w in route.waypoints]
+            WaypointMsg(name=w.name, x=w.x, y=w.y, yaw=w.yaw, actions=[
+                WaypointAction(type=a.type, params_json=json.dumps(a.params),
+                               max_retries=a.max_retries) for a in w.actions])
+            for w in route.waypoints]
         self.get_logger().info(f'Route "{route.name}" geleverd ({len(route.waypoints)} waypoints)')
         return res
 

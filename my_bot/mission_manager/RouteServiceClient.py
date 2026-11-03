@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import json
 import threading
 from typing import Optional
 
 from my_bot_interfaces.srv import GetRoute
-from route_manager import Route, Waypoint
+from route_manager import ActionSpecification, Route, Waypoint
 
 
 class RouteServiceClient():
@@ -36,5 +37,9 @@ class RouteServiceClient():
         if not res.success:
             self._log.warn(f'Route "{name}" niet gevonden: {res.message}')
             return None
-        waypoints = [Waypoint(w.name, w.x, w.y, w.yaw) for w in res.waypoints]
+        waypoints = [
+            Waypoint(w.name, w.x, w.y, w.yaw, [
+                ActionSpecification(a.type, json.loads(a.params_json or '{}'),
+                                    max_retries=a.max_retries) for a in w.actions])
+            for w in res.waypoints]
         return Route(name, res.map_id, waypoints)

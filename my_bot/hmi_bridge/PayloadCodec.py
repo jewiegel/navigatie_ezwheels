@@ -30,7 +30,7 @@ TOPIC_STOP = 'robot/stop'
 
 # MissionState -> statuswoorden die de HMI van de oude patrol_node kent
 PATROL_STATES = {
-    'IDLE': 'idle', 'DRIVING': 'rijdend', 'BLOCKED': 'wachten',
+    'IDLE': 'idle', 'DRIVING': 'rijdend', 'BLOCKED': 'wachten', 'EXECUTING_TASKS': 'rijdend',
     'WAITING_OPERATOR': 'fout', 'ARRIVED': 'voltooid', 'ERROR': 'fout',
 }
 

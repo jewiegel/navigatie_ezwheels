@@ -59,7 +59,7 @@ verschillen alleen in `inflation_radius` (0,55 / 0,80 m), `base_frame_id` en
 ```bash
 ros2 service call /start_route my_bot_interfaces/srv/StartRoute "{route_name: gang_b}"
 ros2 service call /cancel_mission std_srvs/srv/Trigger
-ros2 topic echo /mission_status       # IDLE, DRIVING, ARRIVED, WAITING_OPERATOR (+ route)
+ros2 topic echo /mission_status       # IDLE, DRIVING, EXECUTING_TASKS, ARRIVED, WAITING_OPERATOR (+ route)
 ```
 
 Na `ARRIVED` kan direct een nieuwe route; na `WAITING_OPERATOR` eerst `cancel_mission`.
@@ -101,6 +101,22 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
 3. **Bekijken:** `ros2 service call /get_route my_bot_interfaces/srv/GetRoute "{name: gang_c}"`
    (ook als pijlen op `/route_preview`).
 
+- **Acties op een waypoint** (optioneel): na aankomst voert de mission_manager ze na
+  elkaar uit (`EXECUTING_TASKS`), daarna rijdt de robot verder, ook als een actie
+  mislukt (na `max_retries` extra pogingen, standaard 1). Zie route `acties_demo`:
+  ```yaml
+  - name: keerpunt
+    x: 3.19
+    y: 0.21
+    yaw: 3.14
+    actions:
+    - {type: wait, params: {seconds: 3}}
+    - {type: spin, params: {angle: 6.283}, max_retries: 0}
+  ```
+  Beschikbaar: `wait` en `spin` (Nav2 behavior_server). Nieuwe actie = een action
+  server plus één `registry.register(...)` in `register_tasks()` in
+  `my_bot/MissionManagerNode.py`. De route gaat in stukken naar Nav2, elk stuk eindigt
+  op een waypoint met acties: daar stopt de robot.
 - Waypoints minstens ~0,6 m van muren; anders blijft de robot op "geblokkeerd" staan.
 - **Laat de pijl naar het volgende waypoint wijzen.** Anders draait de robot op het
   waypoint eerst om zijn as, en knippert hij even naar die kant.
@@ -120,7 +136,7 @@ Alle nodes starten mee met `sim.launch.py`, behalve de hmi_bridge (alleen `robot
 | Node | Doet | Belangrijkste topics |
 |---|---|---|
 | `route_manager` | routes laden/opslaan, concept-route | `get_route`, `route_draft/*`, `route_preview` |
-| `mission_manager` | route naar Nav2, missietoestand | `start_route`, `cancel_mission`, `mission_status` |
+| `mission_manager` | route naar Nav2, waypoint-acties, missietoestand | `start_route`, `cancel_mission`, `mission_status` |
 | `turn_detector` | komende bocht en draaien | `turn`, `turn_markers` (RViz/Foxglove) |
 | `signal_manager` | knipperlichten en buzzer | `indicators`, `buzzer_pattern` |
 | `hmi_bridge` | MQTT naar de HMI | zie hieronder |

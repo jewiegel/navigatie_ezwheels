@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'my_bot')))
 
-from route_manager import Route, RouteDraft, Waypoint  # noqa: E402
+from route_manager import ActionSpecification, Route, RouteDraft, Waypoint  # noqa: E402
 from route_manager.repositories import YamlRouteRepository  # noqa: E402
 
 CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config', 'routes.yaml')
@@ -33,6 +33,27 @@ class TestYamlRouteRepository(unittest.TestCase):
         self.assertEqual(self.repo.list(), [])
         with self.assertRaises(KeyError):
             self.repo.load('gang_a')
+
+    def test_acties_lezen_en_opslaan(self):
+        self.write('routes:\n  r:\n    map_id: m\n    waypoints:\n'
+                   '    - {name: a, x: 1, y: 2, yaw: 0}\n'
+                   '    - {name: b, x: 3, y: 4, yaw: 0, actions: [{type: wait, params: {seconds: 3}}]}\n')
+        route = self.repo.load('r')
+        self.assertEqual(route.waypoints[0].actions, [])
+        action = route.waypoints[1].actions[0]
+        self.assertEqual((action.type, action.params, action.max_retries), ('wait', {'seconds': 3}, 1))
+        route.waypoints[1].actions.append(ActionSpecification('spin', max_retries=0))
+        self.repo.save(route)
+        again = self.repo.load('r').waypoints[1].actions
+        self.assertEqual([(a.type, a.max_retries) for a in again], [('wait', 1), ('spin', 0)])
+
+    def test_ongeldige_actie_geeft_fout(self):
+        for actions in ('wait', '[{params: {}}]', '[{type: wait, max_retries: -1}]',
+                        '[{type: wait, params: [1]}]'):
+            self.write('routes:\n  r:\n    waypoints:\n'
+                       f'    - {{x: 1, y: 2, yaw: 0, actions: {actions}}}\n')
+            with self.assertRaisesRegex(ValueError, 'waypoint 1', msg=actions):
+                self.repo.load('r')
 
     def test_save_load_list_delete(self):
         route = Route('gang_a', 'ziekenhuis', [Waypoint('a', 1.0, 2.0, 0.5), Waypoint('b', 3, 4, 0)])

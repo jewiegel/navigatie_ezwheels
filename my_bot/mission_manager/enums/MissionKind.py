@@ -9,3 +9,5 @@ class MissionKind(Enum):
     BT_BLOCKED = 4
     BT_DRIVING = 5
     RESET = 6
+    TASK_SUCCEEDED = 7
+    TASK_FAILED = 8
