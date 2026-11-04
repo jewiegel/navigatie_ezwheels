@@ -1,7 +1,9 @@
 """Genereert model.sdf: driezijdige rolcontainer uit basisvormen.
 
 Gebruik (na het aanpassen van maten of kleuren):  python3 maak_model.py > model.sdf
+Andere stand van de zwenkwielen (graden, kar-frame):  python3 maak_model.py 0 0 0 0 > ...
 """
+import math
 import sys
 
 # Maten van de echte kar: 84,5 cm breed, 70 cm lang, wielen 20,5 cm, zwenkwiel 233 mm hoog.
@@ -13,7 +15,10 @@ PLATE_Z0, PLATE_Z1 = 0.33, 0.36   # bodem: onderkant = vrije hoogte voor de robo
 LEG_R = 0.02                      # poot van draaiplaat naar bodem
 H = PLATE_Z1 + 1.50               # totale hoogte; gaashekken: aanname, niet gemeten
 WHEEL_R, WHEEL_W = 0.1025, 0.05   # wiel: diameter 20,5 cm
-CASTOR_IN = 0.06                  # wielas zoveel binnen de rand van de bodem
+CASTOR_IN = 0.06                  # draai-as zoveel binnen de rand van de bodem
+TRAIL = 0.04                      # naloop: wielmidden zoveel achter de draai-as
+# Stand van elk zwenkwiel (graden, kar-frame): verschillend, zoals na wat duwen.
+CASTOR_YAW = [float(a) for a in sys.argv[1:5]] if len(sys.argv) > 4 else [20, 110, -45, 75]
 TUBE_R, WIRE_R = 0.0125, 0.003    # frame-buis, gaasdraad
 BOTTOM, TOP = PLATE_Z1 + 0.03, H - 0.03
 BLUE = '<material><ambient>0.05 0.2 0.75 1</ambient><diffuse>0.05 0.25 0.85 1</diffuse><specular>0.3 0.3 0.3 1</specular></material>'
@@ -33,12 +38,12 @@ def visual(geom, pose, mat, collide=False):
         out.append(f'      <collision name="c{n}"><pose>{pose}</pose><geometry>{geom}</geometry></collision>')
 
 
-def box(sx, sy, sz, x, y, z, mat, collide=False):
-    visual(f'<box><size>{sx} {sy} {sz}</size></box>', f'{x} {y} {z} 0 0 0', mat, collide)
+def box(sx, sy, sz, x, y, z, mat, collide=False, yaw=0.0):
+    visual(f'<box><size>{sx} {sy} {sz}</size></box>', f'{x} {y} {z} 0 0 {yaw}', mat, collide)
 
 
-def rod(r, length, x, y, z, axis, mat, collide=False):
-    rpy = {'z': '0 0 0', 'x': '0 1.5708 0', 'y': '1.5708 0 0'}[axis]
+def rod(r, length, x, y, z, axis, mat, collide=False, yaw=0.0):
+    rpy = {'z': '0 0 0', 'x': '0 1.5708 0', 'y': f'1.5708 0 {yaw}'}[axis]
     visual(f'<cylinder><radius>{r}</radius><length>{length}</length></cylinder>', f'{x} {y} {z} {rpy}', mat, collide)
 
 
@@ -65,17 +70,23 @@ for i in range(1, 9):   # donkere sleuven: het rooster
     box(0.012, W - 0.08, 0.002, -D / 2 + D * i / 9, 0, PLATE_Z1 + 0.001, SLOT)
 for i in range(1, 8):
     box(D - 0.08, 0.012, 0.002, 0, -W / 2 + W * i / 8, PLATE_Z1 + 0.001, SLOT)
-# Zwenkwielen in de hoeken: wiel, vork, draaiplaat en poot naar de bodem
-for sx in (-1, 1):
-    for sy in (-1, 1):
-        x, y = sx * (D / 2 - CASTOR_IN), sy * (W / 2 - CASTOR_IN)
-        rod(WHEEL_R, WHEEL_W, x, y, WHEEL_R, 'y', WHITE, True)
-        rod(0.04, WHEEL_W + 0.002, x, y, WHEEL_R, 'y', GREY)               # naaf
-        for side in (-1, 1):                                                # vorkpoten
-            box(0.05, 0.006, CASTOR_TOP - 0.02 - WHEEL_R, x, y + side * (WHEEL_W / 2 + 0.006),
-                (WHEEL_R + CASTOR_TOP - 0.02) / 2, GREY, True)
-        box(0.10, 0.08, 0.02, x, y, CASTOR_TOP - 0.01, GREY, True)         # draaiplaat
-        rod(LEG_R, PLATE_Z0 - CASTOR_TOP, x, y, (PLATE_Z0 + CASTOR_TOP) / 2, 'z', BLUE, True)
+# Zwenkwielen in de hoeken (zelfde volgorde als cart_castors in docking): wiel en vork
+# draaien om de draai-as; het wielmidden ligt TRAIL achter de as. Dan draaiplaat en poot.
+for (sx, sy), yaw_deg in zip(((1, 1), (1, -1), (-1, 1), (-1, -1)), CASTOR_YAW):
+    x, y = sx * (D / 2 - CASTOR_IN), sy * (W / 2 - CASTOR_IN)
+    a = math.radians(yaw_deg)
+    c, s = math.cos(a), math.sin(a)
+    wx, wy = x - TRAIL * c, y - TRAIL * s
+    rod(WHEEL_R, WHEEL_W, wx, wy, WHEEL_R, 'y', WHITE, True, a)
+    rod(0.04, WHEEL_W, wx, wy, WHEEL_R, 'y', GREY, False, a)               # naaf
+    for side in (-1, 1):                                                    # vorkpoten
+        off = side * (WHEEL_W / 2 + 0.006)
+        box(0.05, 0.006, CASTOR_TOP - 0.02 - WHEEL_R, wx - off * s, wy + off * c,
+            (WHEEL_R + CASTOR_TOP - 0.02) / 2, GREY, True, a)
+    box(TRAIL + 0.05, WHEEL_W + 0.024, 0.01, (x + wx) / 2, (y + wy) / 2,
+        CASTOR_TOP - 0.025, GREY, False, a)                                 # vorkkop
+    box(0.10, 0.08, 0.02, x, y, CASTOR_TOP - 0.01, GREY, True)             # draaiplaat
+    rod(LEG_R, PLATE_Z0 - CASTOR_TOP, x, y, (PLATE_Z0 + CASTOR_TOP) / 2, 'z', BLUE, True)
 
 rows = [BOTTOM + (TOP - BOTTOM) * k / 4 for k in (1, 2, 3)]
 x0, x1 = -D / 2 + 0.02, D / 2 - 0.02

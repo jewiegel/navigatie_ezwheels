@@ -94,7 +94,18 @@ def generate_launch_description():
             output='screen'),
         Node(
             package='my_bot', executable='WaypointTaskNode.py', name='waypoint_tasks',
-            output='screen'),
+            output='screen',
+            # Maten van de echte kar en robot in meter. NOG NAMETEN: nu de waarden van de
+            # simulatie. Uitleg en tekening: WaypointTaskNode.py en StartenSImulatie.md.
+            parameters=[{
+                'dock_cart.castor_x': 0.29,      # midden kar -> draaipunt zwenkwiel, in de lengte
+                'dock_cart.castor_y': 0.38,    # midden kar -> draaipunt zwenkwiel, in de breedte
+                'dock_cart.wheel_l': 0.19,      # lengte wiel op lidarhoogte (op ashoogte: diameter)
+                'dock_cart.wheel_w': 0.03,       # breedte wiel
+                'dock_cart.trail': 0.04,         # draaipunt -> midden wiel, van bovenaf
+                'dock_cart.robot_half_width': 0.275,  # halve breedte robot (buitenkant wielen)
+                'dock_cart.axle_x': 0.13,        # draaipunt robot (midden wielas) t.o.v. base_link
+            }]),
         Node(
             package='my_bot', executable='HMIBridgeNode.py', name='hmi_bridge',
             output='screen',

@@ -3,8 +3,11 @@
 
 Poses zijn (x, y, theta) in een plat frame; punten zijn (x, y). Het kar-frame heeft
 de oorsprong midden onder de kar en de x-as in de rijrichting van de gedockte robot.
-De lidar ziet van de kar alleen de vier poten (dunne cilinders); hun onderlinge
-afstanden liggen vast, dus uit twee of meer gevonden poten volgt de pose van de kar.
+De lidar zit op wielhoogte en ziet van de kar alleen de vier zwenkwielen, als strepen.
+Per streep volgt uit de bekende wielmaat het midden en de richting van het wiel. De
+draai-as van een zwenkwiel ligt `trail` voor of achter het wielmidden (in de rijrichting
+van het wiel); de draai-assen liggen vast op een rechthoek, dus uit twee of meer wielen
+volgt de pose van de kar.
 """
 import itertools
 import math
@@ -16,6 +19,10 @@ K_ROT = 1.5          # draaien op de plek
 K_LAT = 3.0          # gewenste koershoek per meter zijwaartse fout
 K_HEAD = 2.0         # koersfout -> draaisnelheid
 MAX_COURSE = 0.3     # rad: grootste koershoek om naar de as terug te sturen
+ANGLE_TOL = math.radians(1.0)   # > hoekstap van de lidar (sim 0,375 graden)
+MISSING_COST = 0.01  # m: gewicht van een niet gebruikt wiel bij het kiezen van de kar
+FLIP_MARGIN = 0.025  # m: gespiegeld zo weinig slechter = niet te onderscheiden (gemeten:
+                     # uitgelijnde wielen <= 18 mm, verschillend gedraaide >= 33 mm)
 
 
 def wrap(a: float) -> float:
@@ -45,51 +52,118 @@ def blend(old, new, alpha: float):
             wrap(old[2] + alpha * wrap(new[2] - old[2])))
 
 
-def cart_legs(leg_x: float, leg_y: float):
-    """De vier poten in het kar-frame: rechthoek van 2*leg_x lang en 2*leg_y breed."""
-    return [(leg_x, leg_y), (leg_x, -leg_y), (-leg_x, leg_y), (-leg_x, -leg_y)]
+def cart_castors(castor_x: float, castor_y: float):
+    """De draai-assen van de vier zwenkwielen in het kar-frame: rechthoek van 2*castor_x
+    lang en 2*castor_y breed."""
+    return [(castor_x, castor_y), (castor_x, -castor_y), (-castor_x, castor_y),
+            (-castor_x, -castor_y)]
 
 
-def find_leg_candidates(points, sensor, leg_r: float, max_gap: float = 0.04,
-                        max_width: float = 0.08, min_points: int = 3):
-    """Middelpunten van smalle objecten (mogelijke poten) in een scan.
+def find_wheels(points, sensor, length: float, width: float, max_gap: float = 0.04,
+                min_points: int = 3, max_rms: float = 0.015):
+    """Wielen in een scan: [(midden, richting in rad)].
 
     points: scanpunten in volgorde van de hoek, sensor: positie van de lidar, beide in
-    hetzelfde frame. Een cluster stopt bij een sprong > max_gap. Het middelpunt volgt uit
-    een cirkelfit met bekende straal leg_r (de punten liggen alleen op de zichtkant).
+    hetzelfde frame. Een cluster stopt bij een sprong > max_gap; clusters die niet als
+    rechthoek van length x width (het wiel op lidarhoogte) passen, vallen af. Ligt het
+    buurpunt van een cluster dichterbij, dan staat er iets voor die kant van het wiel; aan
+    het begin of eind van points kan het wiel buiten het blikveld doorlopen.
     """
-    clusters, current = [], []
-    for p in points:
-        if current and math.dist(current[-1], p) > max_gap:
-            clusters.append(current)
-            current = []
-        current.append(p)
-    if current:
-        clusters.append(current)
+    clusters, start = [], 0
+    for i in range(1, len(points) + 1):
+        if i == len(points) or math.dist(points[i - 1], points[i]) > max_gap:
+            clusters.append((start, i))
+            start = i
 
-    centers = []
-    for c in clusters:
-        if len(c) < min_points or math.dist(c[0], c[-1]) > max_width:
+    def hidden(edge, neighbour):
+        if not 0 <= neighbour < len(points):
+            return True    # rand van de scan: het wiel kan buiten het blikveld doorlopen
+        a, b = points[edge], points[neighbour]
+        gap = abs(wrap(math.atan2(a[1] - sensor[1], a[0] - sensor[0]) -
+                       math.atan2(b[1] - sensor[1], b[0] - sensor[0])))
+        return gap < ANGLE_TOL and math.dist(b, sensor) < math.dist(a, sensor)
+
+    wheels = []
+    for i0, i1 in clusters:
+        c = points[i0:i1]
+        if len(c) < min_points or math.dist(c[0], c[-1]) > math.hypot(length, width) + 0.03:
             continue
-        centers.append(_circle_center(c, sensor, leg_r))
-    return centers
+        center, angle, rms = fit_wheel(c, sensor, length, width,
+                                       (hidden(i0, i0 - 1), hidden(i1 - 1, i1)))
+        if rms <= max_rms:
+            wheels.append((center, angle))
+    return wheels
 
 
-def _circle_center(points, sensor, r, iterations=10):
-    """Middelpunt van een cirkel met straal r door de punten: elk punt wijst r verder
-    (van zichzelf af, richting het huidige middelpunt) naar het middelpunt; herhalen."""
-    cx, cy = sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points)
-    d = math.dist((cx, cy), sensor)
-    k = math.pi / 4 * r / d       # start: zwaartepunt van de zichtkant ligt pi/4 * r voor
-    cx, cy = cx + k * (cx - sensor[0]), cy + k * (cy - sensor[1])
-    for _ in range(iterations):
-        sx = sy = 0.0
-        for px, py in points:
-            dist = math.hypot(cx - px, cy - py) or 1e-9
-            sx += px + r * (cx - px) / dist
-            sy += py + r * (cy - py) / dist
-        cx, cy = sx / len(points), sy / len(points)
-    return cx, cy
+def fit_wheel(points, sensor, length: float, width: float, hidden=(False, False)):
+    """Rechthoek van length x width die het best op de punten past: (midden, richting, rms).
+
+    De lidar ziet alleen de kant(en) naar zich toe. Per richting volgt het midden uit de
+    zichtbare zijden. De rechthoek moet vanuit de lidar even breed zijn (in hoek) als de
+    streep, want de stralen ernaast gingen verder; behalve aan een kant waar iets voor
+    het wiel staat (hidden: begin, eind van de streep). Grof zoeken, dan verfijnen.
+    """
+    best = None
+    for step, span in ((math.radians(3), math.pi), (math.radians(0.5), math.radians(3)),
+                       (math.radians(0.1), math.radians(0.5))):
+        center = 0.0 if best is None else best[2]
+        n = int(round(span / step))
+        for k in range(-n, n + 1) if best else range(n):
+            a = center + k * step
+            fit = _fit_box(points, sensor, a, length, width, hidden)
+            if best is None or fit[0] < best[0]:
+                best = (fit[0], fit[1], a, fit[2])
+    _, mid, angle, rms = best
+    return mid, angle % math.pi, rms
+
+
+def _fit_box(points, sensor, a, length, width, hidden):
+    ux, uy = math.cos(a), math.sin(a)
+    pu = [x * ux + y * uy for x, y in points]
+    pv = [-x * uy + y * ux for x, y in points]
+    su, sv = sensor[0] * ux + sensor[1] * uy, -sensor[0] * uy + sensor[1] * ux
+    cu, cv = _axis_center(pu, su, length), _axis_center(pv, sv, width)
+    hl, hw = length / 2, width / 2
+    sq = 0.0
+    for u, v in zip(pu, pv):
+        du, dv = abs(u - cu) - hl, abs(v - cv) - hw
+        sq += min(max(du, dv), 0.0) ** 2 + max(du, 0.0) ** 2 + max(dv, 0.0) ** 2
+    rms = math.sqrt(sq / len(points))
+    mid = (cu * ux - cv * uy, cu * uy + cv * ux)
+
+    # Hoekbreedte van de rechthoek tegenover die van de streep (begin en eind van de scan).
+    ref = math.atan2(mid[1] - sensor[1], mid[0] - sensor[0])
+    dist = math.dist(mid, sensor)
+
+    def bearing(p):
+        return wrap(math.atan2(p[1] - sensor[1], p[0] - sensor[0]) - ref)
+
+    corners = [bearing((mid[0] + ux * du - uy * dv, mid[1] + uy * du + ux * dv))
+               for du in (-hl, hl) for dv in (-hw, hw)]
+    seen_lo, seen_hi = bearing(points[0]), bearing(points[-1])
+    lo = max(0.0, min(corners) - seen_lo) if hidden[0] else abs(min(corners) - seen_lo)
+    hi = max(0.0, seen_hi - max(corners)) if hidden[1] else abs(max(corners) - seen_hi)
+    penalty = (dist * max(0.0, lo - ANGLE_TOL)) ** 2 + (dist * max(0.0, hi - ANGLE_TOL)) ** 2
+    return rms ** 2 + penalty, mid, rms
+
+
+def _axis_center(values, sensor, size):
+    """Midden langs een as: de zijde aan de kant van de lidar ligt op het uiterste punt."""
+    lo, hi = min(values), max(values)
+    if sensor < lo and hi - lo < size:
+        return lo + size / 2
+    if sensor > hi and hi - lo < size:
+        return hi - size / 2
+    return (lo + hi) / 2
+
+
+def axis_candidates(wheel, trail: float):
+    """De twee mogelijke plekken van de draai-as: trail voor of achter het wielmidden."""
+    (x, y), a = wheel
+    if trail <= 0:
+        return [(x, y)]
+    dx, dy = trail * math.cos(a), trail * math.sin(a)
+    return [(x + dx, y + dy), (x - dx, y - dy)]
 
 
 def fit_pose(model, measured):
@@ -111,26 +185,63 @@ def fit_pose(model, measured):
     return pose, rms
 
 
-def match_cart(candidates, prior, legs, gate: float, max_rms: float = 0.02):
-    """Zoek de kar rond de verwachte pose prior. Elke poot mag een kandidaat binnen gate
-    van zijn verwachte plek krijgen; de toewijzing met de meeste poten (minstens 2) en
-    dan de kleinste fout wint. Geeft (pose, aantal poten, rms) of None."""
-    expected = [transform(prior, leg) for leg in legs]
-    options = [[j for j, c in enumerate(candidates) if math.dist(c, e) <= gate] + [None]
+def match_cart(wheels, prior, castors, gate: float, trail: float, trust_prior: bool = False,
+               max_rms: float = 0.02):
+    """Zoek de kar rond de verwachte pose prior. Elke draai-as mag een as-kandidaat van een
+    wiel binnen gate van zijn verwachte plek krijgen (elk wiel hooguit één keer, minstens
+    2 wielen). De kleinste fout wint, met MISSING_COST per ontbrekend wiel: een slecht
+    herkend wiel weglaten is beter dan het meenemen.
+
+    Past ook de gespiegelde toewijzing (van elk wiel de andere as-kandidaat) bijna even
+    goed (hooguit FLIP_MARGIN slechter), dan staan
+    de wielen (bijna) allemaal dezelfde kant op en is niet te zien of de assen voor of
+    achter de wielen zitten. Dan het gemiddelde van beide (= midden van de wielen, hooguit
+    trail ernaast), of met trust_prior de oplossing die duidelijk het dichtst bij prior
+    ligt. Geeft (pose, aantal wielen, rms) of None.
+    """
+    cands = [(i, p) for i, w in enumerate(wheels) for p in axis_candidates(w, trail)]
+    expected = [transform(prior, c) for c in castors]
+    options = [[k for k, (_, p) in enumerate(cands) if math.dist(p, e) <= gate] + [None]
                for e in expected]
+
+    def fit(choice):
+        model = [castors[i] for i, k in enumerate(choice) if k is not None]
+        return fit_pose(model, [cands[k][1] for k in choice if k is not None])
+
     best = None
     for choice in itertools.product(*options):
-        used = [j for j in choice if j is not None]
-        if len(used) < 2 or len(set(used)) != len(used):
+        used = [k for k in choice if k is not None]
+        if len(used) < 2 or len({cands[k][0] for k in used}) != len(used):
             continue
-        model = [legs[i] for i, j in enumerate(choice) if j is not None]
-        pose, rms = fit_pose(model, [candidates[j] for j in used])
-        if rms > max_rms:
-            continue
-        key = (-len(used), rms)
-        if best is None or key < best[0]:
-            best = (key, (pose, len(used), rms))
-    return best[1] if best else None
+        pose, rms = fit(choice)
+        cost = rms + MISSING_COST * (len(castors) - len(used))
+        if rms <= max_rms and (best is None or cost < best[0]):
+            best = (cost, len(used), pose, rms, choice)
+    if best is None:
+        return None
+    _, n, pose, rms, choice = best
+    if trail > 0:
+        flipped, flipped_rms = fit([None if k is None else k ^ 1 for k in choice])
+        if flipped_rms <= rms + FLIP_MARGIN:
+            closer = math.dist(pose[:2], prior[:2]) - math.dist(flipped[:2], prior[:2])
+            if trust_prior and abs(closer) > trail / 2:
+                pose = flipped if closer > 0 else pose
+            else:
+                pose = ((pose[0] + flipped[0]) / 2, (pose[1] + flipped[1]) / 2,
+                        wrap(pose[2] + wrap(flipped[2] - pose[2]) / 2))
+    return pose, n, rms
+
+
+def wheels_in_lane(wheels, cart, length: float, width: float, half_lane: float):
+    """Wielen (midden, richting) waarvan de rechthoek binnen half_lane van de as van de kar
+    komt (kar-frame |y|), dus in de rijbaan van de robot staat."""
+    blocking = []
+    for (x, y), a in wheels:
+        _, wy, wa = compose(inverse(cart), (x, y, a))
+        reach = abs(length / 2 * math.sin(wa)) + abs(width / 2 * math.cos(wa))
+        if abs(wy) - reach < half_lane:
+            blocking.append(((x, y), a))
+    return blocking
 
 
 def _clamp(v, lo, hi):

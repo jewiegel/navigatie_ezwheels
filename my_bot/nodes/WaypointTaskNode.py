@@ -11,9 +11,12 @@ Interface:
           pub docking/active (std_msgs/Bool, transient_local): True tijdens het koppelen
 
 Parameters (dock_cart.*, standaard de simulatie):
-  leg_x, leg_y  halve lengte/breedte van de rechthoek van de poten van de kar  (0.29, 0.3625)
-  leg_r         straal van een poot op lidarhoogte                             (0.02)
-  axle_x        wielas t.o.v. base_link (draaipunt van de robot)               (0.13)
+  castor_x, castor_y  halve lengte/breedte van de rechthoek van de draai-assen van de
+                      zwenkwielen van de kar                                  (0.29, 0.3625)
+  wheel_l, wheel_w    wiel op lidarhoogte: lengte (koorde) en breedte         (0.205, 0.05)
+  trail               naloop: horizontale afstand draai-as tot wielmidden     (0.04)
+  axle_x              wielas van de robot t.o.v. base_link (draaipunt)        (0.13)
+  robot_half_width    halve breedte van de robot (rijbaancontrole)            (0.245)
 """
 import json
 

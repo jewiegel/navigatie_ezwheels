@@ -47,7 +47,8 @@ staat op (0, 0); dat is ook de beginpositie van AMCL.
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
 | `foxglove` | `true` |
 
-De simulatie gebruikt dezelfde topics als de robot (`/laser_1/scan_filtered`, `/odom`,
+De lidar zit in de simulatie op wielhoogte (10 cm, blikveld ±100°), zoals op de echte
+robot. De simulatie gebruikt dezelfde topics als de robot (`/laser_1/scan_filtered`, `/odom`,
 `/cmd_vel`). `config/nav2_params.yaml` (simulatie) en `nav2_params_robot.yaml`
 verschillen alleen in `inflation_radius` (0,55 / 0,80 m), `base_frame_id` en
 `use_sim_time`.
@@ -119,18 +120,28 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
   `register_tasks()` in `my_bot/nodes/MissionManagerNode.py`. De route gaat in stukken
   naar Nav2, elk stuk eindigt op een waypoint met acties: daar stopt de robot.
 - **`dock_cart`** rijdt de robot nauwkeurig midden onder de kar. `params: {x, y, yaw}` is
-  het midden van de kar in `map`, `yaw` de rijrichting van de robot eronder (hij rijdt
-  erin vanaf de andere kant). Nav2 brengt de robot grof 1,4 m voor de kar; daarna meet
-  de lidar de vier poten en rijdt de robot op die meting (niet op AMCL) eerst precies op
-  de as van de kar en dan recht naar binnen. Het resultaat (afwijking in mm en graden)
-  staat in de log van `waypoint_tasks`; boven 15 mm of 1,5° telt het als mislukt. In
-  de simulatie staat de kar vast op (6,0; 6,6), zie route `kar_docken`. Los proberen:
+  het midden van de kar in `map` (±10 cm en ±5° is genoeg), `yaw` de rijrichting van de
+  robot eronder (hij rijdt erin vanaf de andere kant). Nav2 brengt de robot grof 1,4 m voor
+  de kar. Daar staat hij stil en meet de kar: de lidar zit op wielhoogte en ziet de vier
+  zwenkwielen als strepen; per streep volgen uit de bekende wielmaat het midden en de
+  richting van het wiel, en daaruit de draai-as (de naloop voor of achter het wiel). Dan
+  lijnt hij uit op de as van de kar, 1 m ervoor, meet opnieuw en rijdt recht naar binnen.
+  Gevarenlichten staan aan vanaf 1,4 m tot het einde.
+  - Nauwkeurigheid: wielen verschillend gedraaid ~0,5 cm; staan ze (bijna) allemaal
+    dezelfde kant op, dan is niet te zien of de assen voor of achter de wielen zitten en
+    is de fout tot de naloop (~4 cm).
+  - Staat een zwenkwiel naar binnen in de rijbaan, dan rijdt hij er niet in en meldt hij
+    welk wiel.
+  - Resultaat in de log van `waypoint_tasks`. In de simulatie staat de kar vast op
+    (6,0; 6,6), zie route `kar_docken`. Los proberen:
   ```bash
   ros2 action send_goal /dock_cart my_bot_interfaces/action/WaypointTask \
     '{params_json: "{\"x\": 6.0, \"y\": 6.6, \"yaw\": 0.0}"}' --feedback
   ```
-  Echte kar/robot: zet de maten in de parameters van `waypoint_tasks` (`dock_cart.leg_x`,
-  `leg_y`, `leg_r`, `axle_x`, zie `WaypointTaskNode.py`).
+  - Echte kar/robot: zet de maten in de parameters van `waypoint_tasks` (`dock_cart.castor_x`,
+    `castor_y`, `wheel_l`, `wheel_w`, `trail`, `axle_x`, `robot_half_width`, zie
+    `WaypointTaskNode.py`). `wheel_l` is de lengte van het wiel op lidarhoogte.
+  - Na het docken niet draaien onder de kar: zet (nog) geen waypoint na `dock_cart`.
 - Waypoints minstens ~0,6 m van muren; anders blijft de robot op "geblokkeerd" staan.
 - **Laat de pijl naar het volgende waypoint wijzen.** Anders draait de robot op het
   waypoint eerst om zijn as, en knippert hij even naar die kant.
@@ -228,8 +239,9 @@ ros2 run ros_gz_sim create -name kar1 -x 1.5 -y 0.15 -Y 1.57 \
   -file /ros2_ws/install/my_bot/share/my_bot/models/rolcontainer/model.sdf
 ```
 
-Elke kar een eigen `-name`. De lidar (op 0,25 m) ziet van de kar alleen de poten en
-vorken; de bodem zit erboven. Maten of kleuren
+Elke kar een eigen `-name`. De lidar (op 0,10 m) ziet van de kar alleen de zwenkwielen.
+Die hebben 4 cm naloop en staan elk anders (20°, 110°, -45°, 75°); een andere stand:
+`python3 maak_model.py 0 0 0 0 > model.sdf` (graden, kar-frame). Maten of kleuren
 aanpassen: in `models/rolcontainer/maak_model.py`, dan `python3 maak_model.py > model.sdf`
 en `my_bot` bouwen.
 

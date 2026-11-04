@@ -7,7 +7,9 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_link"/>
-    <origin xyz="0.2 0 0.1"/>
+    <!-- Op wielhoogte (10 cm boven de vloer), net voor het chassis: zoals op de echte robot
+         ziet hij zo de zwenkwielen van de kar. -->
+    <origin xyz="0.30 0 -0.05"/>
   </joint>
 
   <link name="laser_link">
@@ -30,10 +32,11 @@
       <lidar>
         <scan>
           <horizontal>
-            <samples>720</samples>
+            <samples>534</samples>
             <resolution>1</resolution>
-            <min_angle>-2.35619</min_angle>   
-            <max_angle>2.35619</max_angle>
+            <!-- +-100 graden: verder kijkt hij tegen de eigen wielen en het chassis aan -->
+            <min_angle>-1.74533</min_angle>
+            <max_angle>1.74533</max_angle>
           </horizontal>
         </scan>
         <range>

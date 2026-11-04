@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import statistics
 import threading
 import time
 
@@ -16,8 +17,8 @@ from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from docking import (
-    axis_cmd, blend, cart_legs, compose, find_leg_candidates, inverse, match_cart, point_cmd,
-    rotate_cmd, transform)
+    axis_cmd, cart_castors, compose, find_wheels, inverse, match_cart, point_cmd, rotate_cmd,
+    transform, wheels_in_lane)
 from .WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
 
 APPROACH_M = 1.4          # Nav2 brengt het midden van de robot zover voor het kar-midden
@@ -25,9 +26,10 @@ STAGE_M = 1.0             # daar precies op de as uitlijnen, dan recht naar binn
 STAGE_TOL_Y, STAGE_TOL_TH = 0.01, math.radians(1.0)
 FINAL_TOL_XY, FINAL_TOL_TH = 0.015, math.radians(1.5)
 STAGE_ATTEMPTS = 3
-GATE_SEARCH, GATE_TRACK = 0.4, 0.12   # m rond de verwachte poot: AMCL-fout / na vinden
-ALPHA = 0.2               # gewicht van een nieuwe scan in de geschatte kar-pose
-CART_TIMEOUT_S = 2.0      # zo lang geen poten gezien: stoppen en wachten
+GATE_SEARCH, GATE_CHECK = 0.4, 0.12   # m rond de verwachte draai-as: AMCL-fout / na meten
+SCANS = 10                # mediaan per straal over zoveel scans (stilstaand): minder ruis
+SETTLE_S = 0.5            # na stoppen even wachten voor de eerste scan
+LANE_MARGIN = 0.02        # m vrij tussen robot en een naar binnen gedraaid wiel
 NAV_TIMEOUT_S = 180.0
 MAX_RANGE_M = 3.0
 LOOP_S = 0.05
@@ -50,10 +52,15 @@ class DockCarTask(WaypointTaskServerBase):
     kant tegenover yaw.
 
     1. Nav2 naar APPROACH_M voor de kar (grof: AMCL zit er decimeters naast).
-    2. De vier poten zoeken met de lidar rond de verwachte plek; vanaf dan volgt de kar-pose
-       uit de poten (odom-frame, gemiddeld over scans), niet meer uit AMCL.
-    3. Precies op de as van de kar zetten, STAGE_M ervoor, met de juiste richting.
-    4. Recht naar binnen tot het midden, onderweg bijsturen op de poten; richting bijdraaien.
+    2. Stilstaan en de kar meten: de zwenkwielen rond de verwachte plek (zie CartDocking);
+       vanaf dan geldt de gemeten kar-pose (odom-frame), niet meer AMCL.
+    3. Precies op de as van de kar zetten, STAGE_M ervoor, met de juiste richting; daar
+       opnieuw meten (dichterbij, nauwkeuriger) en zo nodig opnieuw uitlijnen.
+    4. Recht naar binnen tot het midden op odometrie; richting bijdraaien. Onder de kar
+       ziet de lidar de wielen maar half (rand van het blikveld): daar niet meten.
+
+    Staan de vier wielen (bijna) dezelfde kant op, dan is niet te zien of de draai-assen
+    voor of achter de wielen zitten; de fout is dan hooguit de naloop (trail).
 
     Vanaf stap 2 tot het einde staat docking/active op True (signal_manager: alarmlichten).
     """
@@ -66,10 +73,13 @@ class DockCarTask(WaypointTaskServerBase):
         def param(name, default):
             return node.declare_parameter(f'dock_cart.{name}', default).value
 
-        # Maten van de kar (poten midden op de wielen) en de robot; standaard die van de simulatie.
-        self._legs = cart_legs(param('leg_x', 0.29), param('leg_y', 0.3625))
-        self._leg_r = param('leg_r', 0.02)
+        # Maten van de kar en de robot; standaard die van de simulatie.
+        self._castors = cart_castors(param('castor_x', 0.29), param('castor_y', 0.3625))
+        self._wheel_l = param('wheel_l', 0.205)   # wiel op lidarhoogte: lengte (koorde) ...
+        self._wheel_w = param('wheel_w', 0.05)    # ... en breedte
+        self._trail = param('trail', 0.04)        # naloop: draai-as tot wielmidden
         self._axle_x = param('axle_x', 0.13)   # wielas t.o.v. base_link: hier draait de robot om
+        self._half_width = param('robot_half_width', 0.245)   # buitenkant van de robot
         self._tf = Buffer()
         self._tf_listener = TransformListener(self._tf, node)
         self._cmd = node.create_publisher(Twist, 'cmd_vel', 10)
@@ -81,9 +91,8 @@ class DockCarTask(WaypointTaskServerBase):
         node.create_subscription(LaserScan, '/laser_1/scan_filtered', self._on_scan, 10,
                                  callback_group=callback_group)
         self._lock = threading.Lock()
-        self._cart = None          # geschatte pose van de kar (= doelpose) in odom
-        self._locked = False       # kar al eens gevonden: kleine zoekstraal
-        self._seen = 0.0           # wandkloktijd van de laatste scan met poten
+        self._scans = None         # lijst tijdens een meting, anders None
+        self._cart = None          # gemeten pose van de kar (= doelpose) in odom
         self._cancelled = lambda: False
 
     # ── Actie ─────────────────────────────────────────────────────────────────
@@ -99,12 +108,17 @@ class DockCarTask(WaypointTaskServerBase):
             self._navigate(compose(target, (-APPROACH_M, 0.0, 0.0)))
             feedback('kar zoeken')
             self._docking.publish(Bool(data=True))
-            self._start_tracking(target)
+            try:
+                odom_map = _pose_2d(self._tf.lookup_transform('odom', 'map', Time()))
+            except TransformException as e:
+                raise _Abort(f'geen map -> odom ({e})')
+            self._cart, _ = self._measure(compose(odom_map, target), GATE_SEARCH, False)
             for attempt in range(1, STAGE_ATTEMPTS + 1):
                 feedback(f'uitlijnen voor de kar (poging {attempt})')
                 stage = (self._axle_x - STAGE_M, 0.0)   # wielas STAGE_M voor de gedockte plek
-                self._run(lambda: point_cmd(self._axle(), self._in_cart(stage)))
+                self._run(lambda: point_cmd(self._axle(), transform(self._cart, stage)))
                 self._run(lambda: self._rotate_cmd())
+                self._cart, wheels = self._measure(self._cart, GATE_CHECK, True)
                 _, y, th = self._rel(self._axle())
                 self._log.info(f'Uitgelijnd voor de kar: y={1000 * y:+.1f} mm, '
                                f'hoek={math.degrees(th):+.2f} graden')
@@ -112,13 +126,19 @@ class DockCarTask(WaypointTaskServerBase):
                     break
             else:
                 raise _Abort('lukt niet om recht voor de kar te komen')
+            blocking = wheels_in_lane(wheels, self._cart, self._wheel_l, self._wheel_w,
+                                      self._half_width + LANE_MARGIN)
+            if blocking:
+                where = ', '.join('({:+.2f}, {:+.2f})'.format(*self._rel((*c, a))[:2])
+                                  for c, a in blocking)
+                raise _Abort(f'zwenkwiel staat in de rijbaan (kar-frame x, y: {where}); '
+                             'wiel rechtzetten en opnieuw proberen')
             feedback('onder de kar rijden')
             self._run(lambda: axis_cmd(self._rel(self._axle()), self._axle_x))
             self._run(lambda: self._rotate_cmd())
-            time.sleep(1.0)    # stilstaan en nog een paar scans middelen voor de eindmeting
             x, y, th = self._rel(self._base())
             message = (f'gedockt: afwijking x={1000 * x:+.1f} mm, y={1000 * y:+.1f} mm, '
-                       f'hoek={math.degrees(th):+.2f} graden')
+                       f'hoek={math.degrees(th):+.2f} graden (odometrie t.o.v. de laatste meting)')
             if math.hypot(x, y) > FINAL_TOL_XY or abs(th) > FINAL_TOL_TH:
                 raise _Abort('te onnauwkeurig ' + message)
             self._log.info(message)
@@ -130,7 +150,8 @@ class DockCarTask(WaypointTaskServerBase):
             self._stop()
             self._docking.publish(Bool(data=False))
             with self._lock:
-                self._cart = None
+                self._scans = None
+            self._cart = None
 
     # ── Stappen ───────────────────────────────────────────────────────────────
 
@@ -155,35 +176,10 @@ class DockCarTask(WaypointTaskServerBase):
         if result.result().status != GoalStatus.STATUS_SUCCEEDED:
             raise _Abort(f'Nav2 kwam niet bij de kar (status {result.result().status})')
 
-    def _start_tracking(self, target_map):
-        try:
-            odom_map = _pose_2d(self._tf.lookup_transform('odom', 'map', Time()))
-        except TransformException as e:
-            raise _Abort(f'geen map -> odom ({e})')
-        with self._lock:
-            self._cart = compose(odom_map, target_map)   # verwachting uit AMCL
-            self._locked = False
-        deadline = time.monotonic() + 5.0
-        while not self._locked:
-            self._check_cancel()
-            if time.monotonic() > deadline:
-                raise _Abort('kar niet gevonden: geen drie poten op de verwachte plek')
-            time.sleep(LOOP_S)
-        time.sleep(1.0)   # eerst een paar scans middelen
-
     def _run(self, command):
-        """command() geeft (v, w) of None (klaar); herhalen tot klaar. Stopt en wacht als de
-        poten even niet gezien worden."""
+        """command() geeft (v, w) of None (klaar); herhalen tot klaar."""
         while True:
             self._check_cancel()
-            if time.monotonic() - self._seen > CART_TIMEOUT_S:
-                self._stop()
-                deadline = time.monotonic() + 5.0
-                while time.monotonic() - self._seen > CART_TIMEOUT_S:
-                    self._check_cancel()
-                    if time.monotonic() > deadline:
-                        raise _Abort('kar uit het zicht geraakt')
-                    time.sleep(LOOP_S)
             out = command()
             if out is None:
                 self._stop()
@@ -195,35 +191,56 @@ class DockCarTask(WaypointTaskServerBase):
         w = rotate_cmd(self._rel(self._axle())[2])
         return None if w is None else (0.0, w)
 
-    # ── Kar volgen met de lidar ───────────────────────────────────────────────
+    # ── Kar meten met de lidar ────────────────────────────────────────────────
+
+    def _measure(self, prior, gate, trust_prior):
+        """Stilstaand SCANS scans nemen, per straal de mediaan, en daarin de kar zoeken rond
+        prior (odom). Geeft (pose van de kar, gevonden wielen), in odom."""
+        self._stop()
+        time.sleep(SETTLE_S)
+        with self._lock:
+            self._scans = []
+        deadline = time.monotonic() + 5.0
+        while True:
+            self._check_cancel()
+            with self._lock:
+                if len(self._scans) >= SCANS:
+                    scans, self._scans = self._scans, None
+                    break
+            if time.monotonic() > deadline:
+                raise _Abort('geen lidarscans')
+            time.sleep(LOOP_S)
+
+        last = scans[-1]
+        try:
+            sensor = _pose_2d(self._tf.lookup_transform(
+                'odom', last.header.frame_id, Time.from_msg(last.header.stamp),
+                timeout=Duration(seconds=0.5)))
+        except TransformException as e:
+            raise _Abort(f'geen odom -> lidar ({e})')
+        points = []
+        for i in range(len(last.ranges)):
+            valid = [s.ranges[i] for s in scans
+                     if s.range_min < s.ranges[i] < min(s.range_max, MAX_RANGE_M)]
+            if len(valid) > len(scans) // 2:
+                r = statistics.median(valid)
+                a = last.angle_min + i * last.angle_increment
+                points.append(transform(sensor, (r * math.cos(a), r * math.sin(a))))
+        wheels = find_wheels(points, sensor[:2], self._wheel_l, self._wheel_w)
+        match = match_cart(wheels, prior, self._castors, gate, self._trail, trust_prior)
+        if match is None or match[1] < 3:
+            raise _Abort(f'kar niet gevonden: {len(wheels)} wielen gezien, geen drie op de '
+                         'verwachte plek')
+        pose, n, rms = match
+        shift = math.dist(pose[:2], prior[:2])
+        self._log.info(f'Kar gemeten: {n} wielen, fout {1000 * rms:.1f} mm, '
+                       f'{1000 * shift:.0f} mm van de verwachting')
+        return pose, wheels
 
     def _on_scan(self, scan: LaserScan):
         with self._lock:
-            cart, locked = self._cart, self._locked
-        if cart is None:
-            return
-        try:
-            sensor = _pose_2d(self._tf.lookup_transform(
-                'odom', scan.header.frame_id, Time.from_msg(scan.header.stamp),
-                timeout=Duration(seconds=0.1)))
-        except TransformException:
-            return
-        points = []
-        for i, r in enumerate(scan.ranges):
-            if scan.range_min < r < min(scan.range_max, MAX_RANGE_M):
-                a = scan.angle_min + i * scan.angle_increment
-                points.append(transform(sensor, (r * math.cos(a), r * math.sin(a))))
-        # Op 1,5 m vallen er maar 2-4 stralen op een poot.
-        centers = find_leg_candidates(points, sensor[:2], self._leg_r, min_points=2)
-        match = match_cart(centers, cart, self._legs, GATE_TRACK if locked else GATE_SEARCH)
-        if match is None or (not locked and match[1] < 3):
-            return   # de eerste keer drie poten eisen: dan is het zeker de kar
-        with self._lock:
-            if self._cart is None:
-                return
-            self._cart = blend(self._cart, match[0], ALPHA) if self._locked else match[0]
-            self._locked = True
-            self._seen = time.monotonic()
+            if self._scans is not None:
+                self._scans.append(scan)
 
     # ── Hulpjes ───────────────────────────────────────────────────────────────
 
@@ -238,14 +255,7 @@ class DockCarTask(WaypointTaskServerBase):
 
     def _rel(self, pose):
         """pose (odom) uitgedrukt in het kar-frame."""
-        with self._lock:
-            cart = self._cart
-        return compose(inverse(cart), pose)
-
-    def _in_cart(self, point):
-        with self._lock:
-            cart = self._cart
-        return transform(cart, point)
+        return compose(inverse(self._cart), pose)
 
     def _publish(self, v, w):
         msg = Twist()

@@ -1,4 +1,4 @@
-"""Unittests voor het docken onder de kar — zonder ROS.
+"""Unittests voor het docken onder de kar (wielen herkennen, kar vinden, rijden) — zonder ROS.
 
 Draaien:  python3 -m unittest discover -s test -p "test_docking*" -v   (vanuit navigatie_ezwheels/)
 """
@@ -11,32 +11,51 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'my_bot')))
 
 from docking import (  # noqa: E402
-    axis_cmd, cart_legs, compose, find_leg_candidates, fit_pose, inverse, match_cart, point_cmd,
-    rotate_cmd, transform)
+    axis_cmd, cart_castors, compose, find_wheels, fit_pose, fit_wheel, inverse, match_cart,
+    point_cmd, rotate_cmd, transform, wheels_in_lane)
 
-LEGS = cart_legs(0.29, 0.3625)
-LEG_R = 0.02
+CASTORS = cart_castors(0.29, 0.3625)
+WHEEL_L, WHEEL_W, TRAIL = 0.205, 0.05, 0.04
 CART = (6.0, 6.6, 0.3)
+MIXED = [20, 110, -45, 75]   # standen van de zwenkwielen in graden (kar-frame)
 
 
-def scan(sensor, circles, walls=(), noise=0.0, step=math.radians(0.375), fov=math.radians(135)):
-    """Gesimuleerde lidar: stralen vanaf sensor (pose) op cirkels (x, y, r) en muren (x = c)."""
+def wheel_boxes(cart=CART, yaws_deg=MIXED, trail=TRAIL):
+    """Wielen als (midden, richting): wielmidden ligt trail achter de draai-as."""
+    boxes = []
+    for axis, yaw in zip(CASTORS, yaws_deg):
+        a = cart[2] + math.radians(yaw)
+        ax, ay = transform(cart, axis)
+        boxes.append(((ax - trail * math.cos(a), ay - trail * math.sin(a)), a))
+    return boxes
+
+
+def scan(sensor, boxes, walls=(), noise=0.0, step=math.radians(0.375), fov=math.radians(100)):
+    """Gesimuleerde lidar: stralen vanaf sensor (pose) op rechthoeken (wielen) en muren (x = c)."""
     rng = random.Random(1)
+    segments = []
+    for (cx, cy), a in boxes:
+        c, s = math.cos(a), math.sin(a)
+        corners = [(cx + c * u - s * v, cy + s * u + c * v)
+                   for u, v in ((-WHEEL_L / 2, -WHEEL_W / 2), (WHEEL_L / 2, -WHEEL_W / 2),
+                                (WHEEL_L / 2, WHEEL_W / 2), (-WHEEL_L / 2, WHEEL_W / 2))]
+        segments += [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+    segments += [((x, -100), (x, 100)) for x in walls]
     points = []
     a = -fov
     while a <= fov:
         h = sensor[2] + a
         dx, dy = math.cos(h), math.sin(h)
         best = 12.0
-        for cx, cy, r in circles:
-            fx, fy = sensor[0] - cx, sensor[1] - cy
-            b = fx * dx + fy * dy
-            disc = b * b - (fx * fx + fy * fy - r * r)
-            if disc >= 0 and -b - math.sqrt(disc) > 0.12:
-                best = min(best, -b - math.sqrt(disc))
-        for wx in walls:
-            if dx > 1e-6 and (wx - sensor[0]) / dx > 0.12:
-                best = min(best, (wx - sensor[0]) / dx)
+        for (x1, y1), (x2, y2) in segments:
+            ex, ey = x2 - x1, y2 - y1
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-12:
+                continue
+            t = ((x1 - sensor[0]) * ey - (y1 - sensor[1]) * ex) / den
+            u = ((x1 - sensor[0]) * dy - (y1 - sensor[1]) * dx) / den
+            if 0.12 < t < best and 0 <= u <= 1:
+                best = t
         if best < 12.0:
             d = best + rng.gauss(0, noise)
             points.append((sensor[0] + d * dx, sensor[1] + d * dy))
@@ -44,8 +63,13 @@ def scan(sensor, circles, walls=(), noise=0.0, step=math.radians(0.375), fov=mat
     return points
 
 
-def legs_world(cart=CART):
-    return [(*transform(cart, leg), LEG_R) for leg in LEGS]
+def wheels_seen(sensor, boxes=None, noise=0.0):
+    boxes = wheel_boxes() if boxes is None else boxes
+    return find_wheels(scan(sensor, boxes, noise=noise), sensor[:2], WHEEL_L, WHEEL_W)
+
+
+def error(pose, true=CART):
+    return math.dist(pose[:2], true[:2]), abs(math.degrees(pose[2] - true[2]))
 
 
 class TestGeometry(unittest.TestCase):
@@ -57,47 +81,79 @@ class TestGeometry(unittest.TestCase):
         self.assertAlmostEqual(q[1], 0)
         self.assertAlmostEqual(q[2], 0)
 
-    def test_fit_pose_uit_twee_en_vier_poten(self):
-        for model in (LEGS, LEGS[:2], [LEGS[0], LEGS[3]]):
+    def test_fit_pose_uit_twee_en_vier_punten(self):
+        for model in (CASTORS, CASTORS[:2], [CASTORS[0], CASTORS[3]]):
             pose, rms = fit_pose(model, [transform(CART, p) for p in model])
             for got, want in zip(pose, CART):
                 self.assertAlmostEqual(got, want, places=9)
             self.assertLess(rms, 1e-9)
 
 
-class TestDetectie(unittest.TestCase):
+class TestWielen(unittest.TestCase):
 
-    def test_poten_gevonden_tot_op_millimeters(self):
-        sensor = compose(CART, (-1.2, 0.05, 0.0))
-        points = scan(sensor, legs_world(), walls=[20.0])
-        centers = find_leg_candidates(points, sensor[:2], LEG_R)
-        self.assertEqual(len(centers), 4)
-        for leg in legs_world():
-            self.assertLess(min(math.dist(c, leg[:2]) for c in centers), 0.002)
-
-    def test_muur_is_geen_poot(self):
+    def test_wiel_in_elke_stand(self):
         sensor = (0.0, 0.0, 0.0)
-        self.assertEqual(find_leg_candidates(scan(sensor, [], walls=[2.0]), sensor[:2], LEG_R), [])
+        for yaw in range(0, 180, 15):   # van opzij, schuin en met de kop naar de lidar
+            a = math.radians(yaw)
+            box = ((1.0, 0.1), a)
+            center, angle, rms = fit_wheel(scan(sensor, [box]), sensor[:2], WHEEL_L, WHEEL_W)
+            self.assertLess(math.dist(center, box[0]), 0.005, f'{yaw} graden')   # hoekstap
+            diff = abs((angle - a + math.pi / 2) % math.pi - math.pi / 2)
+            self.assertLess(diff, math.radians(3), f'{yaw} graden')
 
-    def test_kar_gevonden_met_scheve_verwachting_en_stoorobject(self):
+    def test_muur_is_geen_wiel(self):
+        sensor = (0.0, 0.0, 0.0)
+        self.assertEqual(find_wheels(scan(sensor, [], walls=[2.0]), sensor[:2], WHEEL_L, WHEEL_W), [])
+
+
+class TestKarVinden(unittest.TestCase):
+
+    def test_wielen_verschillend_gedraaid_exact(self):
         sensor = compose(CART, (-1.4, 0.1, 0.1))
-        circles = legs_world() + [(*transform(CART, (-0.6, 0.0)), 0.025)]   # paaltje voor de kar
-        centers = find_leg_candidates(scan(sensor, circles, noise=0.005), sensor[:2], LEG_R)
-        prior = compose(CART, (0.2, -0.15, math.radians(6)))               # AMCL zit ernaast
-        pose, n, rms = match_cart(centers, prior, LEGS, gate=0.4)
+        prior = compose(CART, (0.2, -0.15, math.radians(6)))   # AMCL zit ernaast
+        pose, n, _ = match_cart(wheels_seen(sensor), prior, CASTORS, 0.4, TRAIL)
         self.assertEqual(n, 4)
-        self.assertLess(math.dist(pose[:2], CART[:2]), 0.005)
-        self.assertLess(abs(pose[2] - CART[2]), math.radians(0.5))
+        dist, angle = error(pose)
+        self.assertLess(dist, 0.004)
+        self.assertLess(angle, 0.5)
 
-    def test_onder_de_kar_twee_poten_genoeg(self):
-        sensor = compose(CART, (0.2, 0.0, 0.0))   # lidar van een gedockte robot
-        centers = find_leg_candidates(scan(sensor, legs_world()), sensor[:2], LEG_R)
-        pose, n, _ = match_cart(centers, CART, LEGS, gate=0.15)
-        self.assertEqual(n, 2)
-        self.assertLess(math.dist(pose[:2], CART[:2]), 0.003)
+    def test_wielen_allemaal_dezelfde_kant_op_hooguit_trail(self):
+        sensor = compose(CART, (-1.4, 0.0, 0.0))
+        for yaw in (0, 90, 30):
+            boxes = wheel_boxes(yaws_deg=[yaw] * 4)
+            pose, n, _ = match_cart(wheels_seen(sensor, boxes), CART, CASTORS, 0.4, TRAIL)
+            self.assertEqual(n, 4)
+            dist, angle = error(pose)
+            self.assertLess(dist, TRAIL + 0.004, f'{yaw} graden')
+            self.assertLess(angle, 0.5)
+
+    def test_volgen_met_goede_verwachting_kiest_juiste_kant(self):
+        sensor = compose(CART, (-1.0, 0.0, 0.0))
+        boxes = wheel_boxes(yaws_deg=[0] * 4)
+        pose, _, _ = match_cart(wheels_seen(sensor, boxes), compose(CART, (0.005, 0, 0)),
+                                CASTORS, 0.12, TRAIL, trust_prior=True)
+        self.assertLess(error(pose)[0], 0.004)
+
+    def test_met_ruis_van_mediaan_over_scans(self):
+        # mediaan van 10 scans met 1 cm ruis (Gazebo) ~ 4 mm ruis
+        for seed in range(5):
+            rng = random.Random(seed)
+            sensor = compose(CART, (-1.4, rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1)))
+            points = [(x + rng.gauss(0, 0.004), y + rng.gauss(0, 0.004))
+                      for x, y in scan(sensor, wheel_boxes())]
+            wheels = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W)
+            pose, n, _ = match_cart(wheels, CART, CASTORS, 0.4, TRAIL)
+            self.assertGreaterEqual(n, 3)
+            self.assertLess(error(pose)[0], 0.015)
+
+    def test_wiel_in_de_rijbaan(self):
+        lane = 0.245 + 0.02
+        self.assertEqual(wheels_in_lane(wheel_boxes(), CART, WHEEL_L, WHEEL_W, lane), [])
+        inward = wheel_boxes(yaws_deg=[20, 110, -45, -90])   # laatste wiel recht naar binnen
+        self.assertEqual(len(wheels_in_lane(inward, CART, WHEEL_L, WHEEL_W, lane)), 1)
 
     def test_geen_kar_geen_match(self):
-        self.assertIsNone(match_cart([(0.0, 0.0)], CART, LEGS, gate=0.4))
+        self.assertIsNone(match_cart([((0.0, 0.0), 0.0)], CART, CASTORS, 0.4, TRAIL))
 
 
 def drive(pose, v, w, dt=0.05):
