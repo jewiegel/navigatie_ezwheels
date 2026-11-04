@@ -19,7 +19,7 @@ K_ROT = 1.5          # draaien op de plek
 K_LAT = 3.0          # gewenste koershoek per meter zijwaartse fout
 K_HEAD = 2.0         # koersfout -> draaisnelheid
 MAX_COURSE = 0.3     # rad: grootste koershoek om naar de as terug te sturen
-ANGLE_TOL = math.radians(1.0)   # minimaal; DockCarTask geeft 2,5 x de hoekstap van de lidar
+ANGLE_TOL = math.radians(2.5)   # minimaal; ruim, uiteinden van echte wielstrepen zijn rafelig
 MISSING_COST = 0.01  # m: gewicht van een niet gebruikt wiel bij het kiezen van de kar
 FLIP_MARGIN = 0.025  # m: gespiegeld zo weinig slechter = niet te onderscheiden (gemeten:
                      # uitgelijnde wielen <= 18 mm, verschillend gedraaide >= 33 mm)

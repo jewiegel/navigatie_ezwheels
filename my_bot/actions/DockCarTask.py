@@ -243,7 +243,8 @@ class DockCarTask(WaypointTaskServerBase):
         # Alleen zoeken binnen de buitenmaat van de kar rond prior, plus de zoekmarge.
         half_x, half_y = self._cart_half[0] + gate, self._cart_half[1] + gate
         near = points_in_area(points, prior, half_x, half_y)
-        angle_tol = max(math.radians(1.0), 2.5 * abs(last.angle_increment))
+        # Uiteinden van een echte wielstreep kloppen niet precies (ijzer weerkaatst niet): ruim.
+        angle_tol = max(math.radians(2.5), 2.5 * abs(last.angle_increment))
         wheels = find_wheels(near, sensor[:2], self._wheel_l, self._wheel_w, self._wheel_gap,
                              max_rms=self._wheel_rms, angle_tol=angle_tol)
         match = match_cart(wheels, prior, self._castors, gate, self._trail, trust_prior)
