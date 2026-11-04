@@ -7,7 +7,8 @@
 # hospital_robot_bringup sim.launch.py gebruikt dit bestand direct (geen build nodig).
 # Acties per waypoint (optioneel, zie acties_demo): na aankomst na elkaar uitgevoerd, daarna
 # rijdt de robot door, ook als een actie mislukt. type = naam uit register_tasks() in
-# MissionManagerNode.py (nu: wait {seconds}, spin {angle in rad}); max_retries standaard 1.
+# MissionManagerNode.py (nu: wait {seconds}, spin {angle in rad}, dock_cart {x, y, yaw van het
+# kar-midden in map, zie kar_docken}); max_retries standaard 1.
 
 routes:
   gang_a:
@@ -27,6 +28,15 @@ routes:
       - {type: wait, params: {seconds: 3}}
       - {type: spin, params: {angle: 6.283}, max_retries: 0}
     - {name: start, x: 0.35, y: 0.16, yaw: 0.0}
+  kar_docken:
+    map_id: ziekenhuis
+    waypoints:
+    - name: kamer
+      x: 4.0
+      y: 6.6
+      yaw: 0.0
+      actions:
+      - {type: dock_cart, params: {x: 6.0, y: 6.6, yaw: 0.0}, max_retries: 0}
   heen_en_terug:
     map_id: ziekenhuis
     waypoints:

@@ -11,8 +11,10 @@ Interface:
   topic    mission_status  (std_msgs/msg/String)               toestand naar de UI
   client   get_route       (my_bot_interfaces/srv/GetRoute)    route_manager
   action   navigate_through_poses (nav2_msgs)
-  action   waypoint-acties uit de TaskRegistry (zie register_tasks), bv. wait en spin van Nav2
+  action   waypoint-acties uit de TaskRegistry (zie register_tasks): wait en spin van Nav2,
+           dock_cart van de WaypointTaskNode
 """
+import json
 import math
 import threading
 from collections import deque
@@ -27,6 +29,7 @@ from rclpy.lifecycle import Node, State, TransitionCallbackReturn
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from my_bot_interfaces.action import WaypointTask
 from my_bot_interfaces.srv import StartRoute
 from mission_manager import MissionEvent, MissionStateMachine
 from mission_manager.RouteServiceClient import RouteServiceClient
@@ -52,6 +55,10 @@ def register_tasks(registry: TaskRegistry) -> None:
     # Nav2 meet time_allowance in wandkloktijd; ruim, want Gazebo loopt trager dan echt.
     registry.register('spin', Spin, 'spin', lambda p: Spin.Goal(
         target_yaw=float(p.get('angle', 2 * math.pi)), time_allowance=_duration(30.0)))
+    # Eigen acties (WaypointTaskNode): params gaan ongewijzigd mee als JSON.
+    for name in ('dock_cart',):
+        registry.register(name, WaypointTask, name,
+                          lambda p: WaypointTask.Goal(params_json=json.dumps(p)))
 
 
 class MissionManagerNode(Node):

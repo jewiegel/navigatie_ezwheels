@@ -38,18 +38,19 @@ install(
 )
 
 install(PROGRAMS
-  my_bot/MissionManagerNode.py
-  my_bot/RouteManagerServer.py
-  my_bot/TurnDetectorNode.py
-  my_bot/SignalManagerNode.py
-  my_bot/HMIBridgeNode.py
+  my_bot/nodes/MissionManagerNode.py
+  my_bot/nodes/RouteManagerServer.py
+  my_bot/nodes/TurnDetectorNode.py
+  my_bot/nodes/SignalManagerNode.py
+  my_bot/nodes/HMIBridgeNode.py
+  my_bot/nodes/WaypointTaskNode.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # Packages van MissionManagerNode en RouteManagerServer (import: from mission_manager import ...)
 install(
   DIRECTORY my_bot/mission_manager my_bot/route_manager my_bot/turn_detection
-    my_bot/signal_manager my_bot/hmi_bridge
+    my_bot/signal_manager my_bot/hmi_bridge my_bot/actions my_bot/docking
   DESTINATION lib/${PROJECT_NAME}
   PATTERN "__pycache__" EXCLUDE
 )

@@ -93,6 +93,9 @@ def generate_launch_description():
             package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
             output='screen'),
         Node(
+            package='my_bot', executable='WaypointTaskNode.py', name='waypoint_tasks',
+            output='screen'),
+        Node(
             package='my_bot', executable='HMIBridgeNode.py', name='hmi_bridge',
             output='screen',
             parameters=[{

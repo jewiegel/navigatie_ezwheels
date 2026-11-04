@@ -113,10 +113,24 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
     - {type: wait, params: {seconds: 3}}
     - {type: spin, params: {angle: 6.283}, max_retries: 0}
   ```
-  Beschikbaar: `wait` en `spin` (Nav2 behavior_server). Nieuwe actie = een action
-  server plus één `registry.register(...)` in `register_tasks()` in
-  `my_bot/MissionManagerNode.py`. De route gaat in stukken naar Nav2, elk stuk eindigt
-  op een waypoint met acties: daar stopt de robot.
+  Beschikbaar: `wait` en `spin` (Nav2 behavior_server) en `dock_cart` (zie hieronder).
+  Nieuwe actie: een klasse op `WaypointTaskServerBase` in `my_bot/actions/`, toevoegen
+  aan `tasks` in `my_bot/nodes/WaypointTaskNode.py` en de naam aan de lijst in
+  `register_tasks()` in `my_bot/nodes/MissionManagerNode.py`. De route gaat in stukken
+  naar Nav2, elk stuk eindigt op een waypoint met acties: daar stopt de robot.
+- **`dock_cart`** rijdt de robot nauwkeurig midden onder de kar. `params: {x, y, yaw}` is
+  het midden van de kar in `map`, `yaw` de rijrichting van de robot eronder (hij rijdt
+  erin vanaf de andere kant). Nav2 brengt de robot grof 1,4 m voor de kar; daarna meet
+  de lidar de vier poten en rijdt de robot op die meting (niet op AMCL) eerst precies op
+  de as van de kar en dan recht naar binnen. Het resultaat (afwijking in mm en graden)
+  staat in de log van `waypoint_tasks`; boven 15 mm of 1,5° telt het als mislukt. In
+  de simulatie staat de kar vast op (6,0; 6,6), zie route `kar_docken`. Los proberen:
+  ```bash
+  ros2 action send_goal /dock_cart my_bot_interfaces/action/WaypointTask \
+    '{params_json: "{\"x\": 6.0, \"y\": 6.6, \"yaw\": 0.0}"}' --feedback
+  ```
+  Echte kar/robot: zet de maten in de parameters van `waypoint_tasks` (`dock_cart.leg_x`,
+  `leg_y`, `leg_r`, `axle_x`, zie `WaypointTaskNode.py`).
 - Waypoints minstens ~0,6 m van muren; anders blijft de robot op "geblokkeerd" staan.
 - **Laat de pijl naar het volgende waypoint wijzen.** Anders draait de robot op het
   waypoint eerst om zijn as, en knippert hij even naar die kant.
@@ -139,6 +153,7 @@ Alle nodes starten mee met `sim.launch.py`, behalve de hmi_bridge (alleen `robot
 | `mission_manager` | route naar Nav2, waypoint-acties, missietoestand | `start_route`, `cancel_mission`, `mission_status` |
 | `turn_detector` | komende bocht en draaien | `turn`, `turn_markers` (RViz/Foxglove) |
 | `signal_manager` | knipperlichten en buzzer | `indicators`, `buzzer_pattern` |
+| `waypoint_tasks` | eigen waypoint-acties als action servers (`dock_cart`) | `dock_cart`, `cmd_vel` |
 | `hmi_bridge` | MQTT naar de HMI | zie hieronder |
 
 **turn_detector:** kijkt `lookahead_m` (3 m) vooruit in `/plan`; een
@@ -151,7 +166,7 @@ een bocht **bij** een waypoint op tijd gemeld wordt. Logt elke verandering, bv.
 
 | Uitgang | Waarde | Wanneer |
 |---|---|---|
-| `/indicators` | `gevaar` | blokkade, `WAITING_OPERATOR`/`ERROR`, of tijdens het rijden een bron die wegvalt |
+| `/indicators` | `gevaar` | blokkade, koppelen aan de kar (`dock_cart`, vanaf 1,4 m voor de kar), `WAITING_OPERATOR`/`ERROR`, of tijdens het rijden een bron die wegvalt |
 | | `links` / `rechts` | onderweg: de komende bocht; binnen `at_turn_m` (0,5 m): de echte draairichting. Brandt `hold_s` (1 s) na |
 | | `uit` | anders |
 | `/buzzer_pattern` | `elke_5s` → `uit` | zolang de route geblokkeerd is |
@@ -201,7 +216,8 @@ docker stop mqtt_test
 ```
 
 **Rolcontainer** (`models/rolcontainer`, naar de echte kar: 0,845 m breed, 0,70 m lang,
-wielen 20,5 cm, open kant langs +x, statisch). De bodem staat op korte poten: 0,33 m vrije
+wielen 20,5 cm, open kant langs +x, statisch). `sim.launch.py` zet er één vast neer als
+`kar` op (6,0; 6,6) (`CART_POSE`). De bodem staat op korte poten: 0,33 m vrije
 hoogte (hoger dan de echte kar, zodat de gesimuleerde robot van 0,275 m eronder past) en
 0,645 m tussen de wielen; de robot rijdt erin langs de x-as van de kar. De gaashekken
 (1,5 m) zijn niet nagemeten.
@@ -255,7 +271,7 @@ colcon test --packages-select hospital_robot_bt_nodes hospital_robot_navigation 
 colcon test-result --verbose
 
 cd /ros2_ws/src/navigatie_ezwheels
-for t in mission route turn signal hmi; do python3 -m unittest discover -s test -p "test_${t}*"; done
+for t in mission route turn signal hmi docking; do python3 -m unittest discover -s test -p "test_${t}*"; done
 ```
 
 `colcon test` op `my_bot` meldt stijlfouten (copyright-koppen, docstrings); die zeggen

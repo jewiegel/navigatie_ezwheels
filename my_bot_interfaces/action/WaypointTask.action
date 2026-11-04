@@ -1,0 +1,8 @@
+# Actie op een waypoint (mission_manager -> waypoint_tasks). Eén action server per actie,
+# genoemd naar de actie (bv. dock_cart).
+string params_json    # params uit routes.yaml als JSON-object
+---
+bool success
+string message        # uitkomst, bv. de eindafwijking bij dock_cart
+---
+string status         # huidige stap
