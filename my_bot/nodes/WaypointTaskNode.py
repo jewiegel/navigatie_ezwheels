@@ -19,6 +19,11 @@ Parameters (dock_cart.*, standaard de simulatie):
                       zwenkwielen van de kar                                  (0.29, 0.3625)
   wheel_l, wheel_w    wiel op lidarhoogte: lengte (koorde) en breedte         (0.205, 0.05)
   trail               naloop: horizontale afstand draai-as tot wielmidden     (0.04)
+  wheel_gap           grootste gat in de streep van één wiel (niet-weerkaatsend
+                      ijzer); groter = gaten overbruggen, maar wielen kleven aan
+                      dingen ernaast                                          (0.08)
+  wheel_rms           hoeveel de streep gemiddeld van de wielvorm mag afwijken
+                      (kronkels)                                              (0.02)
   axle_x              wielas van de robot t.o.v. base_link (draaipunt)        (0.13)
   robot_half_width    halve breedte van de robot (rijbaancontrole)            (0.245)
 """

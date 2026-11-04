@@ -103,6 +103,18 @@ class TestWielen(unittest.TestCase):
             diff = abs((angle - a + math.pi / 2) % math.pi - math.pi / 2)
             self.assertLess(diff, math.radians(3), f'{yaw} graden')
 
+    def test_wiel_met_gaten(self):
+        # Ijzeren delen weerkaatsen niet: stukken van de streep ontbreken.
+        sensor = (0.0, 0.0, 0.0)
+        box = ((1.2, 0.05), math.radians(80))
+        points = scan(sensor, [box])
+        n = len(points)
+        holes = points[:n // 3] + points[n // 3 + 4:2 * n // 3] + points[2 * n // 3 + 3:]
+        self.assertLess(max(math.dist(a, b) for a, b in zip(holes, holes[1:])), 0.08)
+        wheels = find_wheels(holes, sensor[:2], WHEEL_L, WHEEL_W, max_gap=0.08)
+        self.assertEqual(len(wheels), 1)
+        self.assertLess(math.dist(wheels[0][0], box[0]), 0.01)
+
     def test_stoelpoot_is_geen_wiel(self):
         sensor = (0.0, 0.0, 0.0)
         for size in (0.02, 0.025):   # buizen van 2-3 cm; schuin gezien tot ~3,5 cm

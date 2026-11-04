@@ -82,6 +82,9 @@ class DockCarTask(WaypointTaskServerBase):
         self._wheel_l = param('wheel_l', 0.205)   # wiel op lidarhoogte: lengte (koorde) ...
         self._wheel_w = param('wheel_w', 0.05)    # ... en breedte
         self._trail = param('trail', 0.04)        # naloop: draai-as tot wielmidden
+        # Een wielstreep mag gaten hebben (stukken die niet weerkaatsen) en kronkelen.
+        self._wheel_gap = param('wheel_gap', 0.08)   # grootste gat binnen één wiel
+        self._wheel_rms = param('wheel_rms', 0.02)   # gemiddelde afwijking van de wielvorm
         self._axle_x = param('axle_x', 0.13)   # wielas t.o.v. base_link: hier draait de robot om
         self._half_width = param('robot_half_width', 0.245)   # buitenkant van de robot
         self._cart_half = (param('cart_length', 0.70) / 2, param('cart_width', 0.845) / 2)
@@ -241,7 +244,8 @@ class DockCarTask(WaypointTaskServerBase):
         half_x, half_y = self._cart_half[0] + gate, self._cart_half[1] + gate
         near = points_in_area(points, prior, half_x, half_y)
         angle_tol = max(math.radians(1.0), 2.5 * abs(last.angle_increment))
-        wheels = find_wheels(near, sensor[:2], self._wheel_l, self._wheel_w, angle_tol=angle_tol)
+        wheels = find_wheels(near, sensor[:2], self._wheel_l, self._wheel_w, self._wheel_gap,
+                             max_rms=self._wheel_rms, angle_tol=angle_tol)
         match = match_cart(wheels, prior, self._castors, gate, self._trail, trust_prior)
         self._show(prior, half_x, half_y, wheels, match[0] if match and match[1] >= 3 else None)
         if match is None or match[1] < 3:

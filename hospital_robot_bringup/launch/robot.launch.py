@@ -101,11 +101,15 @@ def generate_launch_description():
                 'dock_cart.cart_length': 0.70,   # buitenmaat kar in de rijrichting (zoekgebied)
                 'dock_cart.cart_width': 0.845,   # buitenmaat kar dwars (zoekgebied)
                 'dock_cart.search_margin': 0.25, # zoeken tot zover buiten de kar (AMCL-fout)
-                'dock_cart.castor_x': 0.29,      # midden kar -> draaipunt zwenkwiel, in de lengte
-                'dock_cart.castor_y': 0.38,    # midden kar -> draaipunt zwenkwiel, in de breedte
+                # castor_x, castor_y en trail afgeleid uit een lidarscan van de echte kar
+                # (wielmiddens 70 cm uit elkaar dwars); castor_x en trail samen onzeker (~1 cm).
+                'dock_cart.castor_x': 0.31,      # midden kar -> draaipunt zwenkwiel, in de lengte
+                'dock_cart.castor_y': 0.35,      # midden kar -> draaipunt zwenkwiel, in de breedte
                 'dock_cart.wheel_l': 0.19,      # lengte wiel op lidarhoogte (op ashoogte: diameter)
                 'dock_cart.wheel_w': 0.03,       # breedte wiel
-                'dock_cart.trail': 0.04,         # draaipunt -> midden wiel, van bovenaf
+                'dock_cart.trail': 0.03,         # draaipunt -> midden wiel, van bovenaf
+                'dock_cart.wheel_gap': 0.08,     # grootste gat in de streep van één wiel
+                'dock_cart.wheel_rms': 0.02,     # zoveel mag de streep kronkelen (gemiddeld)
                 'dock_cart.robot_half_width': 0.275,  # halve breedte robot (buitenkant wielen)
                 'dock_cart.axle_x': 0.13,        # draaipunt robot (midden wielas) t.o.v. base_link
             }]),

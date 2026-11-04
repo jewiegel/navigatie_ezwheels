@@ -133,6 +133,18 @@ def _fit_box(points, sensor, a, length, width, hidden, angle_tol):
     su, sv = sensor[0] * ux + sensor[1] * uy, -sensor[0] * uy + sensor[1] * ux
     cu, cv = _axis_center(pu, su, length), _axis_center(pv, sv, width)
     hl, hw = length / 2, width / 2
+    # Verfijnen: elk punt hoort bij zijn dichtstbijzijnde zijde en legt die zijde vast; het
+    # gemiddelde per as is minder gevoelig voor ruis en kronkels dan het uiterste punt.
+    for _ in range(2):
+        on_u, on_v = [], []
+        for u, v in zip(pu, pv):
+            du, dv = u - cu, v - cv
+            if hl - abs(du) < hw - abs(dv):
+                on_u.append(u - math.copysign(hl, du))
+            else:
+                on_v.append(v - math.copysign(hw, dv))
+        cu = sum(on_u) / len(on_u) if on_u else cu
+        cv = sum(on_v) / len(on_v) if on_v else cv
     sq = 0.0
     for u, v in zip(pu, pv):
         du, dv = abs(u - cu) - hl, abs(v - cv) - hw
