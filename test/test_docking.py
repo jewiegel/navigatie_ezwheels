@@ -216,6 +216,10 @@ class TestRegelaar(unittest.TestCase):
         pose = self.run_until_done((0, 0, 2.5), lambda p: point_cmd(p, (0.4, -0.3)))
         self.assertLess(math.dist(pose[:2], (0.4, -0.3)), 0.01)
 
+    def test_punt_ernaast_niet_klaar_net_erachter_wel(self):
+        self.assertIsNotNone(point_cmd((0, 0, 0), (0.0, 0.02)))     # 2 cm opzij: corrigeren
+        self.assertIsNone(point_cmd((0, 0, 0), (-0.01, 0.005)))     # net voorbij: klaar
+
     def test_as_volgen_vooruit_en_achteruit(self):
         for start, stop in (((-1.0, 0.015, math.radians(1)), 0.13), ((0.13, 0.01, 0.0), -0.9)):
             pose = self.run_until_done(start, lambda p: axis_cmd(p, stop))

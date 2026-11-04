@@ -273,14 +273,17 @@ def rotate_cmd(heading_error: float, tol: float = math.radians(0.3)):
     return _with_min(-K_ROT * heading_error, W_MIN, W_MAX)
 
 
-def point_cmd(robot, point, tol: float = 0.005):
+def point_cmd(robot, point, tol: float = 0.005, lateral_tol: float = 0.015):
     """(v, w) om de as van de robot recht naar point te rijden; None = klaar.
-    Eerst draaien tot het punt voor de robot ligt, dan rijden met koerscorrectie."""
+    Eerst draaien tot het punt voor de robot ligt, dan rijden met koerscorrectie. Net
+    voorbij het punt is ook goed, mits het hooguit lateral_tol opzij ligt: anders zou hij
+    voor een paar millimeter omkeren."""
     dx, dy = point[0] - robot[0], point[1] - robot[1]
     dist = math.hypot(dx, dy)
     bearing = wrap(math.atan2(dy, dx) - robot[2])
     ahead = dist * math.cos(bearing)
-    if dist <= tol or (dist < 0.05 and ahead <= tol):
+    lateral = abs(dist * math.sin(bearing))
+    if dist <= tol or (dist < 0.05 and ahead <= tol and lateral <= lateral_tol):
         return None
     if abs(bearing) > 0.3:
         return 0.0, _with_min(K_ROT * bearing, W_MIN, W_MAX)

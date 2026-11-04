@@ -26,7 +26,8 @@ from .WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
 
 APPROACH_M = 1.4          # Nav2 brengt het midden van de robot zover voor het kar-midden
 STAGE_M = 1.0             # daar precies op de as uitlijnen, dan recht naar binnen
-STAGE_TOL_Y, STAGE_TOL_TH = 0.01, math.radians(1.0)
+# Rest stuurt het rechtdoor naar binnen rijden bij (1 m tot de kar, convergeert in ~0,3 m).
+STAGE_TOL_Y, STAGE_TOL_TH = 0.02, math.radians(1.5)
 FINAL_TOL_XY, FINAL_TOL_TH = 0.015, math.radians(1.5)
 STAGE_ATTEMPTS = 3
 GATE_SEARCH, GATE_CHECK = 0.4, 0.12   # m rond de verwachte draai-as: AMCL-fout / na meten
