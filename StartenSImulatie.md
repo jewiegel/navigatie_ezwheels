@@ -132,8 +132,10 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
     is de fout tot de naloop (~4 cm).
   - Staat een zwenkwiel naar binnen in de rijbaan, dan rijdt hij er niet in en meldt hij
     welk wiel.
-  - Hij zoekt alleen binnen een rechthoek rond de opgegeven kar (de kar plus 40 cm marge);
-    alles daarbuiten (stoelpoten, muren) telt niet mee.
+  - Hij zoekt alleen binnen de buitenmaat van de kar (`cart_length` x `cart_width`) plus
+    `search_margin` (25 cm) rondom; alles daarbuiten (stoelen, banken, muren) telt niet mee.
+    Strepen smaller dan 75% van de wielbreedte (dunne poten) tellen ook niet als wiel. De
+    opgegeven kar plus de AMCL-fout moet dus binnen ~25 cm kloppen.
   - Meekijken: RViz/Foxglove, MarkerArray `/dock_cart/markers` (frame `odom`). Geel: het
     zoekgebied en waar de draaipunten verwacht worden; oranje: de gevonden wielen; groen:
     de gemeten kar.
@@ -145,9 +147,9 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
   ros2 action send_goal /dock_cart my_bot_interfaces/action/WaypointTask \
     '{params_json: "{\"x\": 6.0, \"y\": 6.6, \"yaw\": 0.0}"}' --feedback
   ```
-  - Echte kar/robot: zet de maten in de parameters van `waypoint_tasks` (`dock_cart.castor_x`,
-    `castor_y`, `wheel_l`, `wheel_w`, `trail`, `axle_x`, `robot_half_width`, zie
-    `WaypointTaskNode.py`). `wheel_l` is de lengte van het wiel op lidarhoogte.
+  - Echte kar/robot: zet de maten in de parameters van `waypoint_tasks` in `robot.launch.py`
+    (`dock_cart.cart_length`, `cart_width`, `search_margin`, `castor_x`, `castor_y`,
+    `wheel_l`, `wheel_w`, `trail`, `axle_x`, `robot_half_width`, zie `WaypointTaskNode.py`). `wheel_l` is de lengte van het wiel op lidarhoogte.
   - Na het docken niet draaien onder de kar: zet (nog) geen waypoint na `dock_cart`.
 - Waypoints minstens ~0,6 m van muren; anders blijft de robot op "geblokkeerd" staan.
 - **Laat de pijl naar het volgende waypoint wijzen.** Anders draait de robot op het

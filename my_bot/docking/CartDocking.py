@@ -53,13 +53,6 @@ def cart_castors(castor_x: float, castor_y: float):
             (-castor_x, -castor_y)]
 
 
-def search_area(castors, trail: float, length: float, gate: float):
-    """Halve lengte en breedte (kar-frame) van het gebied waarin de wielen kunnen staan:
-    de draai-assen plus naloop en een half wiel (elke stand), plus de zoekmarge gate."""
-    reach = trail + length / 2 + gate
-    return (max(abs(c[0]) for c in castors) + reach, max(abs(c[1]) for c in castors) + reach)
-
-
 def points_in_area(points, prior, half_x: float, half_y: float):
     """Alleen de punten binnen de rechthoek van 2*half_x bij 2*half_y rond prior (kar-frame)."""
     inv = inverse(prior)
@@ -98,7 +91,10 @@ def find_wheels(points, sensor, length: float, width: float, max_gap: float = 0.
     wheels = []
     for i0, i1 in clusters:
         c = points[i0:i1]
-        if len(c) < min_points or math.dist(c[0], c[-1]) > math.hypot(length, width) + 0.03:
+        extent = math.dist(c[0], c[-1])
+        # Een wiel is van elke kant minstens zo breed als zijn breedte: dunnere strepen
+        # (stoel- en tafelpoten) en langere (muren) zijn geen wiel.
+        if len(c) < min_points or not 0.75 * width <= extent <= math.hypot(length, width) + 0.03:
             continue
         center, angle, rms = fit_wheel(c, sensor, length, width,
                                        (hidden(i0, i0 - 1), hidden(i1 - 1, i1)), angle_tol)

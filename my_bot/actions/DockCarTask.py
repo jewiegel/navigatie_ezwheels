@@ -21,7 +21,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from docking import (
     axis_candidates, axis_cmd, cart_castors, compose, find_wheels, inverse, match_cart,
-    point_cmd, points_in_area, rotate_cmd, search_area, transform, wheels_in_lane)
+    point_cmd, points_in_area, rotate_cmd, transform, wheels_in_lane)
 from .WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
 
 APPROACH_M = 1.4          # Nav2 brengt het midden van de robot zover voor het kar-midden
@@ -30,7 +30,7 @@ STAGE_M = 1.0             # daar precies op de as uitlijnen, dan recht naar binn
 STAGE_TOL_Y, STAGE_TOL_TH = 0.02, math.radians(1.5)
 FINAL_TOL_XY, FINAL_TOL_TH = 0.015, math.radians(1.5)
 STAGE_ATTEMPTS = 3
-GATE_SEARCH, GATE_CHECK = 0.4, 0.12   # m rond de verwachte draai-as: AMCL-fout / na meten
+GATE_CHECK = 0.12         # m rond de verwachte draai-as bij het nameten (eerste keer: search_margin)
 SCANS = 10                # mediaan per straal over zoveel scans (stilstaand): minder ruis
 SETTLE_S = 0.5            # na stoppen even wachten voor de eerste scan
 LANE_MARGIN = 0.02        # m vrij tussen robot en een naar binnen gedraaid wiel
@@ -84,6 +84,10 @@ class DockCarTask(WaypointTaskServerBase):
         self._trail = param('trail', 0.04)        # naloop: draai-as tot wielmidden
         self._axle_x = param('axle_x', 0.13)   # wielas t.o.v. base_link: hier draait de robot om
         self._half_width = param('robot_half_width', 0.245)   # buitenkant van de robot
+        self._cart_half = (param('cart_length', 0.70) / 2, param('cart_width', 0.845) / 2)
+        # Zoekgebied = buitenmaat van de kar plus deze marge rondom (AMCL-fout en wielen die
+        # buiten de kar uitsteken); ook de zoekstraal rond elk verwacht draaipunt.
+        self._margin = param('search_margin', 0.25)
         self._tf = Buffer()
         self._tf_listener = TransformListener(self._tf, node)
         self._cmd = node.create_publisher(Twist, 'cmd_vel', 10)
@@ -119,7 +123,7 @@ class DockCarTask(WaypointTaskServerBase):
                 odom_map = _pose_2d(self._tf.lookup_transform('odom', 'map', Time()))
             except TransformException as e:
                 raise _Abort(f'geen map -> odom ({e})')
-            self._cart, _ = self._measure(compose(odom_map, target), GATE_SEARCH, False)
+            self._cart, _ = self._measure(compose(odom_map, target), self._margin, False)
             for attempt in range(1, STAGE_ATTEMPTS + 1):
                 feedback(f'uitlijnen voor de kar (poging {attempt})')
                 stage = (self._axle_x - STAGE_M, 0.0)   # wielas STAGE_M voor de gedockte plek
@@ -233,8 +237,8 @@ class DockCarTask(WaypointTaskServerBase):
                 r = statistics.median(valid)
                 a = last.angle_min + i * last.angle_increment
                 points.append(transform(sensor, (r * math.cos(a), r * math.sin(a))))
-        # Alleen zoeken waar de wielen kunnen staan: de kar rond prior plus de zoekmarge.
-        half_x, half_y = search_area(self._castors, self._trail, self._wheel_l, gate)
+        # Alleen zoeken binnen de buitenmaat van de kar rond prior, plus de zoekmarge.
+        half_x, half_y = self._cart_half[0] + gate, self._cart_half[1] + gate
         near = points_in_area(points, prior, half_x, half_y)
         angle_tol = max(math.radians(1.0), 2.5 * abs(last.angle_increment))
         wheels = find_wheels(near, sensor[:2], self._wheel_l, self._wheel_w, angle_tol=angle_tol)

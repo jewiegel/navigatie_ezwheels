@@ -98,6 +98,9 @@ def generate_launch_description():
             # Maten van de echte kar en robot in meter. NOG NAMETEN: nu de waarden van de
             # simulatie. Uitleg en tekening: WaypointTaskNode.py en StartenSImulatie.md.
             parameters=[{
+                'dock_cart.cart_length': 0.70,   # buitenmaat kar in de rijrichting (zoekgebied)
+                'dock_cart.cart_width': 0.845,   # buitenmaat kar dwars (zoekgebied)
+                'dock_cart.search_margin': 0.25, # zoeken tot zover buiten de kar (AMCL-fout)
                 'dock_cart.castor_x': 0.29,      # midden kar -> draaipunt zwenkwiel, in de lengte
                 'dock_cart.castor_y': 0.38,    # midden kar -> draaipunt zwenkwiel, in de breedte
                 'dock_cart.wheel_l': 0.19,      # lengte wiel op lidarhoogte (op ashoogte: diameter)

@@ -13,6 +13,8 @@ Interface:
               wielen en gemeten kar, voor RViz/Foxglove. Mislukt meten: scan in ~/.ros
 
 Parameters (dock_cart.*, standaard de simulatie):
+  cart_length, cart_width  buitenmaat van de kar (zoekgebied)                (0.70, 0.845)
+  search_margin       marge rond de kar en rond elk verwacht draaipunt        (0.25)
   castor_x, castor_y  halve lengte/breedte van de rechthoek van de draai-assen van de
                       zwenkwielen van de kar                                  (0.29, 0.3625)
   wheel_l, wheel_w    wiel op lidarhoogte: lengte (koorde) en breedte         (0.205, 0.05)

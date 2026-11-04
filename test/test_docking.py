@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from docking import (  # noqa: E402
     axis_cmd, cart_castors, compose, find_wheels, fit_pose, fit_wheel, inverse, match_cart,
-    point_cmd, points_in_area, rotate_cmd, search_area, transform, wheels_in_lane)
+    point_cmd, points_in_area, rotate_cmd, transform, wheels_in_lane)
 
 CASTORS = cart_castors(0.29, 0.3625)
 WHEEL_L, WHEEL_W, TRAIL = 0.205, 0.05, 0.04
@@ -103,6 +103,13 @@ class TestWielen(unittest.TestCase):
             diff = abs((angle - a + math.pi / 2) % math.pi - math.pi / 2)
             self.assertLess(diff, math.radians(3), f'{yaw} graden')
 
+    def test_stoelpoot_is_geen_wiel(self):
+        sensor = (0.0, 0.0, 0.0)
+        for size in (0.02, 0.025):   # buizen van 2-3 cm; schuin gezien tot ~3,5 cm
+            legs = [((1.0, y), 0.3, size, size) for y in (-0.3, 0.0, 0.3)]
+            self.assertEqual(find_wheels(scan(sensor, legs), sensor[:2], WHEEL_L, WHEEL_W), [],
+                             f'poot {size} m')
+
     def test_muur_is_geen_wiel(self):
         sensor = (0.0, 0.0, 0.0)
         self.assertEqual(find_wheels(scan(sensor, [], walls=[2.0]), sensor[:2], WHEEL_L, WHEEL_W), [])
@@ -170,11 +177,11 @@ class TestKarVinden(unittest.TestCase):
         sensor = compose(CART, (-1.4, 0.05, 0.05))
         points = scan(sensor, wheel_boxes() + clutter)
         everything = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W)
-        half_x, half_y = search_area(CASTORS, TRAIL, WHEEL_L, 0.4)
+        half_x, half_y = 0.70 / 2 + 0.25, 0.845 / 2 + 0.25   # buitenmaat kar + zoekmarge
         near = points_in_area(points, CART, half_x, half_y)
         in_area = find_wheels(near, sensor[:2], WHEEL_L, WHEEL_W)
         self.assertGreater(len(everything), len(in_area))
-        self.assertLessEqual(len(in_area), 6)
+        self.assertLessEqual(len(in_area), 5)
         pose, n, _ = match_cart(in_area, compose(CART, (0.15, -0.1, 0.05)), CASTORS, 0.4, TRAIL)
         self.assertEqual(n, 4)
         self.assertLess(error(pose)[0], 0.005)
