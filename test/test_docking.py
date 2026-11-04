@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from docking import (  # noqa: E402
     axis_cmd, cart_castors, compose, find_wheels, fit_pose, fit_wheel, inverse, match_cart,
-    point_cmd, rotate_cmd, transform, wheels_in_lane)
+    point_cmd, points_in_area, rotate_cmd, search_area, transform, wheels_in_lane)
 
 CASTORS = cart_castors(0.29, 0.3625)
 WHEEL_L, WHEEL_W, TRAIL = 0.205, 0.05, 0.04
@@ -31,14 +31,16 @@ def wheel_boxes(cart=CART, yaws_deg=MIXED, trail=TRAIL):
 
 
 def scan(sensor, boxes, walls=(), noise=0.0, step=math.radians(0.375), fov=math.radians(100)):
-    """Gesimuleerde lidar: stralen vanaf sensor (pose) op rechthoeken (wielen) en muren (x = c)."""
+    """Gesimuleerde lidar: stralen vanaf sensor (pose) op rechthoeken (midden, richting[, lengte,
+    breedte]; standaard een wiel) en muren (x = c)."""
     rng = random.Random(1)
     segments = []
-    for (cx, cy), a in boxes:
+    for box in boxes:
+        (cx, cy), a = box[:2]
+        hl, hw = (box[2] / 2, box[3] / 2) if len(box) > 2 else (WHEEL_L / 2, WHEEL_W / 2)
         c, s = math.cos(a), math.sin(a)
         corners = [(cx + c * u - s * v, cy + s * u + c * v)
-                   for u, v in ((-WHEEL_L / 2, -WHEEL_W / 2), (WHEEL_L / 2, -WHEEL_W / 2),
-                                (WHEEL_L / 2, WHEEL_W / 2), (-WHEEL_L / 2, WHEEL_W / 2))]
+                   for u, v in ((-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw))]
         segments += [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
     segments += [((x, -100), (x, 100)) for x in walls]
     points = []
@@ -151,6 +153,40 @@ class TestKarVinden(unittest.TestCase):
         self.assertEqual(wheels_in_lane(wheel_boxes(), CART, WHEEL_L, WHEEL_W, lane), [])
         inward = wheel_boxes(yaws_deg=[20, 110, -45, -90])   # laatste wiel recht naar binnen
         self.assertEqual(len(wheels_in_lane(inward, CART, WHEEL_L, WHEEL_W, lane)), 1)
+
+    def test_zoekgebied_met_veel_stoorobjecten(self):
+        # Rond de kar: stoelpoten (3 x 3 cm) en blokjes zo groot als een wiel, dichtbij en ver weg.
+        rng = random.Random(3)
+        clutter = []
+        for _ in range(40):
+            x, y = rng.uniform(-2.5, 2.5), rng.uniform(-2.5, 2.5)
+            if abs(x) < 0.9 and abs(y) < 0.9:
+                continue   # niet onder of tegen de kar
+            pos = transform(CART, (x, y))
+            if rng.random() < 0.5:
+                clutter.append((pos, rng.uniform(0, math.pi), 0.03, 0.03))
+            else:
+                clutter.append((pos, rng.uniform(0, math.pi), WHEEL_L, WHEEL_W))
+        sensor = compose(CART, (-1.4, 0.05, 0.05))
+        points = scan(sensor, wheel_boxes() + clutter)
+        everything = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W)
+        half_x, half_y = search_area(CASTORS, TRAIL, WHEEL_L, 0.4)
+        near = points_in_area(points, CART, half_x, half_y)
+        in_area = find_wheels(near, sensor[:2], WHEEL_L, WHEEL_W)
+        self.assertGreater(len(everything), len(in_area))
+        self.assertLessEqual(len(in_area), 6)
+        pose, n, _ = match_cart(in_area, compose(CART, (0.15, -0.1, 0.05)), CASTORS, 0.4, TRAIL)
+        self.assertEqual(n, 4)
+        self.assertLess(error(pose)[0], 0.005)
+
+    def test_grovere_lidar(self):
+        sensor = compose(CART, (-1.4, 0.05, 0.05))
+        step = math.radians(1.0)   # echte lidar met 1 graad per straal
+        points = scan(sensor, wheel_boxes(), step=step)
+        wheels = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W, angle_tol=2.5 * step)
+        pose, n, _ = match_cart(wheels, CART, CASTORS, 0.4, TRAIL)
+        self.assertGreaterEqual(n, 3)
+        self.assertLess(error(pose)[0], 0.015)
 
     def test_geen_kar_geen_match(self):
         self.assertIsNone(match_cart([((0.0, 0.0), 0.0)], CART, CASTORS, 0.4, TRAIL))

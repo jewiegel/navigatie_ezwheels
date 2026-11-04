@@ -19,7 +19,7 @@ K_ROT = 1.5          # draaien op de plek
 K_LAT = 3.0          # gewenste koershoek per meter zijwaartse fout
 K_HEAD = 2.0         # koersfout -> draaisnelheid
 MAX_COURSE = 0.3     # rad: grootste koershoek om naar de as terug te sturen
-ANGLE_TOL = math.radians(1.0)   # > hoekstap van de lidar (sim 0,375 graden)
+ANGLE_TOL = math.radians(1.0)   # minimaal; DockCarTask geeft 2,5 x de hoekstap van de lidar
 MISSING_COST = 0.01  # m: gewicht van een niet gebruikt wiel bij het kiezen van de kar
 FLIP_MARGIN = 0.025  # m: gespiegeld zo weinig slechter = niet te onderscheiden (gemeten:
                      # uitgelijnde wielen <= 18 mm, verschillend gedraaide >= 33 mm)
@@ -46,12 +46,6 @@ def inverse(p):
     return (-c * p[0] - s * p[1], s * p[0] - c * p[1], -p[2])
 
 
-def blend(old, new, alpha: float):
-    """Nieuwe meting voor een fractie alpha laten meetellen (hoek zonder sprong bij +-pi)."""
-    return (old[0] + alpha * (new[0] - old[0]), old[1] + alpha * (new[1] - old[1]),
-            wrap(old[2] + alpha * wrap(new[2] - old[2])))
-
-
 def cart_castors(castor_x: float, castor_y: float):
     """De draai-assen van de vier zwenkwielen in het kar-frame: rechthoek van 2*castor_x
     lang en 2*castor_y breed."""
@@ -59,8 +53,26 @@ def cart_castors(castor_x: float, castor_y: float):
             (-castor_x, -castor_y)]
 
 
+def search_area(castors, trail: float, length: float, gate: float):
+    """Halve lengte en breedte (kar-frame) van het gebied waarin de wielen kunnen staan:
+    de draai-assen plus naloop en een half wiel (elke stand), plus de zoekmarge gate."""
+    reach = trail + length / 2 + gate
+    return (max(abs(c[0]) for c in castors) + reach, max(abs(c[1]) for c in castors) + reach)
+
+
+def points_in_area(points, prior, half_x: float, half_y: float):
+    """Alleen de punten binnen de rechthoek van 2*half_x bij 2*half_y rond prior (kar-frame)."""
+    inv = inverse(prior)
+    kept = []
+    for p in points:
+        x, y = transform(inv, p)
+        if abs(x) <= half_x and abs(y) <= half_y:
+            kept.append(p)
+    return kept
+
+
 def find_wheels(points, sensor, length: float, width: float, max_gap: float = 0.04,
-                min_points: int = 3, max_rms: float = 0.015):
+                min_points: int = 3, max_rms: float = 0.015, angle_tol: float = ANGLE_TOL):
     """Wielen in een scan: [(midden, richting in rad)].
 
     points: scanpunten in volgorde van de hoek, sensor: positie van de lidar, beide in
@@ -81,7 +93,7 @@ def find_wheels(points, sensor, length: float, width: float, max_gap: float = 0.
         a, b = points[edge], points[neighbour]
         gap = abs(wrap(math.atan2(a[1] - sensor[1], a[0] - sensor[0]) -
                        math.atan2(b[1] - sensor[1], b[0] - sensor[0])))
-        return gap < ANGLE_TOL and math.dist(b, sensor) < math.dist(a, sensor)
+        return gap < angle_tol and math.dist(b, sensor) < math.dist(a, sensor)
 
     wheels = []
     for i0, i1 in clusters:
@@ -89,13 +101,14 @@ def find_wheels(points, sensor, length: float, width: float, max_gap: float = 0.
         if len(c) < min_points or math.dist(c[0], c[-1]) > math.hypot(length, width) + 0.03:
             continue
         center, angle, rms = fit_wheel(c, sensor, length, width,
-                                       (hidden(i0, i0 - 1), hidden(i1 - 1, i1)))
+                                       (hidden(i0, i0 - 1), hidden(i1 - 1, i1)), angle_tol)
         if rms <= max_rms:
             wheels.append((center, angle))
     return wheels
 
 
-def fit_wheel(points, sensor, length: float, width: float, hidden=(False, False)):
+def fit_wheel(points, sensor, length: float, width: float, hidden=(False, False),
+              angle_tol: float = ANGLE_TOL):
     """Rechthoek van length x width die het best op de punten past: (midden, richting, rms).
 
     De lidar ziet alleen de kant(en) naar zich toe. Per richting volgt het midden uit de
@@ -110,14 +123,14 @@ def fit_wheel(points, sensor, length: float, width: float, hidden=(False, False)
         n = int(round(span / step))
         for k in range(-n, n + 1) if best else range(n):
             a = center + k * step
-            fit = _fit_box(points, sensor, a, length, width, hidden)
+            fit = _fit_box(points, sensor, a, length, width, hidden, angle_tol)
             if best is None or fit[0] < best[0]:
                 best = (fit[0], fit[1], a, fit[2])
     _, mid, angle, rms = best
     return mid, angle % math.pi, rms
 
 
-def _fit_box(points, sensor, a, length, width, hidden):
+def _fit_box(points, sensor, a, length, width, hidden, angle_tol):
     ux, uy = math.cos(a), math.sin(a)
     pu = [x * ux + y * uy for x, y in points]
     pv = [-x * uy + y * ux for x, y in points]
@@ -143,7 +156,7 @@ def _fit_box(points, sensor, a, length, width, hidden):
     seen_lo, seen_hi = bearing(points[0]), bearing(points[-1])
     lo = max(0.0, min(corners) - seen_lo) if hidden[0] else abs(min(corners) - seen_lo)
     hi = max(0.0, seen_hi - max(corners)) if hidden[1] else abs(max(corners) - seen_hi)
-    penalty = (dist * max(0.0, lo - ANGLE_TOL)) ** 2 + (dist * max(0.0, hi - ANGLE_TOL)) ** 2
+    penalty = (dist * max(0.0, lo - angle_tol)) ** 2 + (dist * max(0.0, hi - angle_tol)) ** 2
     return rms ** 2 + penalty, mid, rms
 
 

@@ -9,6 +9,8 @@ Interface:
   action  dock_cart  (my_bot_interfaces/action/WaypointTask)  robot midden onder de kar
           gebruikt: navigate_to_pose (Nav2), /laser_1/scan_filtered, tf, pub cmd_vel
           pub docking/active (std_msgs/Bool, transient_local): True tijdens het koppelen
+          pub dock_cart/markers (visualization_msgs/MarkerArray, odom): zoekgebied, gevonden
+              wielen en gemeten kar, voor RViz/Foxglove. Mislukt meten: scan in ~/.ros
 
 Parameters (dock_cart.*, standaard de simulatie):
   castor_x, castor_y  halve lengte/breedte van de rechthoek van de draai-assen van de

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
+import json
 import math
+import os
 import statistics
 import threading
 import time
 
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -15,10 +17,11 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
+from visualization_msgs.msg import Marker, MarkerArray
 
 from docking import (
-    axis_cmd, cart_castors, compose, find_wheels, inverse, match_cart, point_cmd, rotate_cmd,
-    transform, wheels_in_lane)
+    axis_candidates, axis_cmd, cart_castors, compose, find_wheels, inverse, match_cart,
+    point_cmd, points_in_area, rotate_cmd, search_area, transform, wheels_in_lane)
 from .WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
 
 APPROACH_M = 1.4          # Nav2 brengt het midden van de robot zover voor het kar-midden
@@ -86,6 +89,9 @@ class DockCarTask(WaypointTaskServerBase):
         self._docking = node.create_publisher(
             Bool, 'docking/active', QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._docking.publish(Bool(data=False))
+        self._markers = node.create_publisher(
+            MarkerArray, 'dock_cart/markers',
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self._nav = ActionClient(node, NavigateToPose, 'navigate_to_pose',
                                  callback_group=callback_group)
         node.create_subscription(LaserScan, '/laser_1/scan_filtered', self._on_scan, 10,
@@ -226,16 +232,84 @@ class DockCarTask(WaypointTaskServerBase):
                 r = statistics.median(valid)
                 a = last.angle_min + i * last.angle_increment
                 points.append(transform(sensor, (r * math.cos(a), r * math.sin(a))))
-        wheels = find_wheels(points, sensor[:2], self._wheel_l, self._wheel_w)
+        # Alleen zoeken waar de wielen kunnen staan: de kar rond prior plus de zoekmarge.
+        half_x, half_y = search_area(self._castors, self._trail, self._wheel_l, gate)
+        near = points_in_area(points, prior, half_x, half_y)
+        angle_tol = max(math.radians(1.0), 2.5 * abs(last.angle_increment))
+        wheels = find_wheels(near, sensor[:2], self._wheel_l, self._wheel_w, angle_tol=angle_tol)
         match = match_cart(wheels, prior, self._castors, gate, self._trail, trust_prior)
+        self._show(prior, half_x, half_y, wheels, match[0] if match and match[1] >= 3 else None)
         if match is None or match[1] < 3:
-            raise _Abort(f'kar niet gevonden: {len(wheels)} wielen gezien, geen drie op de '
-                         'verwachte plek')
+            nearest = []
+            for c in self._castors:
+                e = transform(prior, c)
+                d = [math.dist(e, a) for w in wheels for a in axis_candidates(w, self._trail)]
+                nearest.append(f'{100 * min(d):.0f}' if d else '-')
+            path = self._save(sensor, prior, gate, points, wheels)
+            raise _Abort(f'kar niet gevonden: {len(wheels)} wielen in het zoekgebied '
+                         f'({2 * half_x:.1f} x {2 * half_y:.1f} m), geen drie op de verwachte '
+                         f'plek; dichtstbijzijnde wiel per draaipunt: {", ".join(nearest)} cm '
+                         f'(zoekmarge {100 * gate:.0f} cm). Scan bewaard: {path}')
         pose, n, rms = match
         shift = math.dist(pose[:2], prior[:2])
         self._log.info(f'Kar gemeten: {n} wielen, fout {1000 * rms:.1f} mm, '
                        f'{1000 * shift:.0f} mm van de verwachting')
         return pose, wheels
+
+    def _show(self, prior, half_x, half_y, wheels, cart):
+        """Markers op dock_cart/markers (odom): zoekgebied en verwachte draaipunten (geel),
+        gevonden wielen (oranje), gemeten kar (groen)."""
+        stamp = self._node.get_clock().now().to_msg()
+        markers = [Marker(action=Marker.DELETEALL)]
+
+        def marker(kind, rgb, scale, ns):
+            m = Marker(type=kind, ns=ns, id=len(markers))
+            m.header.frame_id, m.header.stamp = 'odom', stamp
+            m.scale.x = m.scale.y = m.scale.z = scale
+            m.color.r, m.color.g, m.color.b, m.color.a = (*rgb, 1.0)
+            m.pose.orientation.w = 1.0
+            markers.append(m)
+            return m
+
+        def outline(pose, hx, hy, rgb, ns):
+            m = marker(Marker.LINE_STRIP, rgb, 0.01, ns)
+            for x, y in ((hx, hy), (hx, -hy), (-hx, -hy), (-hx, hy), (hx, hy)):
+                px, py = transform(pose, (x, y))
+                m.points.append(Point(x=px, y=py, z=0.10))
+
+        def dots(pose, rgb, ns):
+            m = marker(Marker.SPHERE_LIST, rgb, 0.04, ns)
+            for c in self._castors:
+                px, py = transform(pose, c)
+                m.points.append(Point(x=px, y=py, z=0.10))
+
+        outline(prior, half_x, half_y, (1.0, 0.8, 0.0), 'zoekgebied')
+        dots(prior, (1.0, 0.8, 0.0), 'verwacht')
+        for (x, y), a in wheels:
+            m = marker(Marker.CUBE, (1.0, 0.4, 0.0), 0.0, 'wielen')
+            m.scale.x, m.scale.y, m.scale.z = self._wheel_l, self._wheel_w, 0.1
+            m.pose.position.x, m.pose.position.y, m.pose.position.z = x, y, 0.10
+            m.pose.orientation.z, m.pose.orientation.w = math.sin(a / 2), math.cos(a / 2)
+        if cart is not None:
+            outline(cart, max(c[0] for c in self._castors), max(c[1] for c in self._castors),
+                    (0.0, 0.9, 0.0), 'kar')
+            dots(cart, (0.0, 0.9, 0.0), 'kar')
+        self._markers.publish(MarkerArray(markers=markers))
+
+    def _save(self, sensor, prior, gate, points, wheels):
+        """Scan en verwachting als JSON in ~/.ros, om een mislukte meting na te kijken."""
+        folder = os.path.join(os.environ.get('ROS_HOME', os.path.expanduser('~/.ros')))
+        path = os.path.join(folder, time.strftime('dock_cart_%Y%m%d_%H%M%S.json'))
+        try:
+            os.makedirs(folder, exist_ok=True)
+            with open(path, 'w') as f:
+                json.dump({'sensor': sensor, 'prior': prior, 'gate': gate,
+                           'castors': self._castors, 'wheel_l': self._wheel_l,
+                           'wheel_w': self._wheel_w, 'trail': self._trail,
+                           'points': points, 'wheels': wheels}, f)
+        except OSError as e:
+            return f'niet gelukt ({e})'
+        return path
 
     def _on_scan(self, scan: LaserScan):
         with self._lock:

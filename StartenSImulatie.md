@@ -132,6 +132,13 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
     is de fout tot de naloop (~4 cm).
   - Staat een zwenkwiel naar binnen in de rijbaan, dan rijdt hij er niet in en meldt hij
     welk wiel.
+  - Hij zoekt alleen binnen een rechthoek rond de opgegeven kar (de kar plus 40 cm marge);
+    alles daarbuiten (stoelpoten, muren) telt niet mee.
+  - Meekijken: RViz/Foxglove, MarkerArray `/dock_cart/markers` (frame `odom`). Geel: het
+    zoekgebied en waar de draaipunten verwacht worden; oranje: de gevonden wielen; groen:
+    de gemeten kar.
+  - Niet gevonden: de melding noemt per verwacht draaipunt het dichtstbijzijnde wiel (cm),
+    en de scan staat in `~/.ros/dock_cart_<datum>_<tijd>.json` (om na te kijken).
   - Resultaat in de log van `waypoint_tasks`. In de simulatie staat de kar vast op
     (6,0; 6,6), zie route `kar_docken`. Los proberen:
   ```bash
