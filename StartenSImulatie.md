@@ -200,6 +200,23 @@ docker exec mqtt_test mosquitto_pub -t robot/start -m 1   # startknop
 docker stop mqtt_test
 ```
 
+**Rolcontainer** (`models/rolcontainer`, naar de echte kar: 0,845 m breed, 0,70 m lang,
+wielen 20,5 cm, open kant langs +x, statisch). De bodem staat op korte poten: 0,33 m vrije
+hoogte (hoger dan de echte kar, zodat de gesimuleerde robot van 0,275 m eronder past) en
+0,645 m tussen de wielen; de robot rijdt erin langs de x-as van de kar. De gaashekken
+(1,5 m) zijn niet nagemeten.
+Zet er één neer terwijl de simulatie draait (`-Y` = draaiing in rad):
+
+```bash
+ros2 run ros_gz_sim create -name kar1 -x 1.5 -y 0.15 -Y 1.57 \
+  -file /ros2_ws/install/my_bot/share/my_bot/models/rolcontainer/model.sdf
+```
+
+Elke kar een eigen `-name`. De lidar (op 0,25 m) ziet van de kar alleen de poten en
+vorken; de bodem zit erboven. Maten of kleuren
+aanpassen: in `models/rolcontainer/maak_model.py`, dan `python3 maak_model.py > model.sdf`
+en `my_bot` bouwen.
+
 ## 7. Kaart maken met SLAM
 
 Alleen voor een nieuwe kaart. Zet `mode: mapping` in
