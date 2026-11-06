@@ -18,6 +18,7 @@ Parameters (dock_cart.*, standaard de echte kar, die ook in de simulatie staat):
   depth_offset        zoveel ligt het echte kar-midden verder dan het midden van de
                       wielpunten (lidar ziet alleen de voorkant van de wielen) (0.055)
   axle_x              wielas van de robot t.o.v. base_link (draaipunt)        (0.13)
+  drive_in_extra      zoveel rijdt base_link voorbij het kar-midden door       (0.0)
   robot_half_width    halve breedte van de robot (rijbaan: minstens 2x dit vrij) (0.245)
 """
 import json

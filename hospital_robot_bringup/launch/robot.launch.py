@@ -105,6 +105,7 @@ def generate_launch_description():
                 # na het docken: staat de robot X cm te kort, tel X/100 erbij op.
                 'dock_cart.depth_offset': 0.055,
                 'dock_cart.robot_half_width': 0.275,  # halve breedte robot (buitenkant wielen)
+                'dock_cart.drive_in_extra': 0.0, # m: base_link zoveel voorbij het kar-midden
                 'dock_cart.axle_x': 0.13,        # draaipunt robot (midden wielas) t.o.v. base_link
             }]),
         Node(

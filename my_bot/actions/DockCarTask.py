@@ -89,6 +89,8 @@ class DockCarTask(WaypointTaskServerBase):
         self._depth_offset = param('depth_offset', 0.055)   # ingemeten in Gazebo (3 proeven)
         self._axle_x = param('axle_x', 0.13)   # wielas t.o.v. base_link: hier draait de robot om
         self._half_width = param('robot_half_width', 0.245)   # buitenkant van de robot
+        # base_link eindigt zoveel voorbij het kar-midden (langere robot: verder doorrijden)
+        self._extra = param('drive_in_extra', 0.0)
         # Zo ver mag de kar van de opgegeven plek staan (AMCL-fout + fout in de route).
         self._margin = param('search_margin', 0.25)
         self._tf = Buffer()
@@ -168,9 +170,10 @@ class DockCarTask(WaypointTaskServerBase):
                 self._log.warn(f'{len(near)} scanpunt(en) dicht bij de rijbaan (kar-frame y in cm: '
                                f'{", ".join(ys[:8])}); toch inrijden')
             feedback('onder de kar rijden')
-            self._run(lambda: axis_cmd(self._rel(self._axle()), self._axle_x))
+            self._run(lambda: axis_cmd(self._rel(self._axle()), self._axle_x + self._extra))
             self._run(lambda: self._rotate_cmd())
             x, y, th = self._rel(self._base())
+            x -= self._extra
             message = (f'gedockt: afwijking x={1000 * x:+.1f} mm, y={1000 * y:+.1f} mm, '
                        f'hoek={math.degrees(th):+.2f} graden (odometrie t.o.v. de laatste meting)')
             if math.hypot(x, y) > FINAL_TOL_XY or abs(th) > FINAL_TOL_TH:
