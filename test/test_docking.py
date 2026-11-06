@@ -1,7 +1,11 @@
-"""Unittests voor het docken onder de kar (wielen herkennen, kar vinden, rijden) — zonder ROS.
+"""Unittests voor het docken onder de kar (kar meten in de ROI, rijbaan, rijden) — zonder ROS.
+
+Ook op drie echte scans van de zorgkar (test/data/echte_kar_*.json; 1 en 2: mediaan van 10
+scans vanaf ~1,3 m met veel rafels, 3: stabiele punten van 30 scans, zie 'note').
 
 Draaien:  python3 -m unittest discover -s test -p "test_docking*" -v   (vanuit navigatie_ezwheels/)
 """
+import json
 import math
 import os
 import random
@@ -11,13 +15,17 @@ import unittest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'my_bot')))
 
 from docking import (  # noqa: E402
-    axis_cmd, cart_castors, compose, find_wheels, fit_pose, fit_wheel, inverse, match_cart,
-    point_cmd, points_in_area, points_in_lane, rotate_cmd, transform)
+    axis_cmd, compose, inverse, measure_cart, point_cmd, points_in_lane, rotate_cmd,
+    stable_points, transform)
 
-CASTORS = cart_castors(0.29, 0.3625)
-WHEEL_L, WHEEL_W, TRAIL = 0.205, 0.05, 0.04
+# De echte zorgkar: draai-assen van de zwenkwielen, wiel op lidarhoogte, naloop
+CASTORS = [(0.31, 0.35), (0.31, -0.35), (-0.31, 0.35), (-0.31, -0.35)]
+WHEEL_L, WHEEL_W, TRAIL = 0.19, 0.03, 0.03
+HALF = (0.35, 0.4225)          # halve buitenmaat (cart_length, cart_width)
+LANE = 2 * 0.245               # robotbreedte (simulatie)
 CART = (6.0, 6.6, 0.3)
 MIXED = [20, 110, -45, 75]   # standen van de zwenkwielen in graden (kar-frame)
+DATA = os.path.join(os.path.dirname(__file__), 'data')
 
 
 def wheel_boxes(cart=CART, yaws_deg=MIXED, trail=TRAIL):
@@ -30,10 +38,11 @@ def wheel_boxes(cart=CART, yaws_deg=MIXED, trail=TRAIL):
     return boxes
 
 
-def scan(sensor, boxes, walls=(), noise=0.0, step=math.radians(0.375), fov=math.radians(100)):
+def scan(sensor, boxes, walls=(), noise=0.0, step=math.radians(0.375), fov=math.radians(100),
+         seed=1):
     """Gesimuleerde lidar: stralen vanaf sensor (pose) op rechthoeken (midden, richting[, lengte,
     breedte]; standaard een wiel) en muren (x = c)."""
-    rng = random.Random(1)
+    rng = random.Random(seed)
     segments = []
     for box in boxes:
         (cx, cy), a = box[:2]
@@ -65,13 +74,15 @@ def scan(sensor, boxes, walls=(), noise=0.0, step=math.radians(0.375), fov=math.
     return points
 
 
-def wheels_seen(sensor, boxes=None, noise=0.0):
-    boxes = wheel_boxes() if boxes is None else boxes
-    return find_wheels(scan(sensor, boxes, noise=noise), sensor[:2], WHEEL_L, WHEEL_W)
-
-
 def error(pose, true=CART):
-    return math.dist(pose[:2], true[:2]), abs(math.degrees(pose[2] - true[2]))
+    """(diepte, zijwaarts, hoek in graden) van pose t.o.v. true, in het kar-frame."""
+    e = compose(inverse(true), pose)
+    return abs(e[0]), abs(e[1]), abs(math.degrees(e[2]))
+
+
+def measure(points, prior):
+    result, why = measure_cart(points, prior, *HALF, 0.25, LANE)
+    return result, why
 
 
 class TestGeometry(unittest.TestCase):
@@ -83,91 +94,63 @@ class TestGeometry(unittest.TestCase):
         self.assertAlmostEqual(q[1], 0)
         self.assertAlmostEqual(q[2], 0)
 
-    def test_fit_pose_uit_twee_en_vier_punten(self):
-        for model in (CASTORS, CASTORS[:2], [CASTORS[0], CASTORS[3]]):
-            pose, rms = fit_pose(model, [transform(CART, p) for p in model])
-            for got, want in zip(pose, CART):
-                self.assertAlmostEqual(got, want, places=9)
-            self.assertLess(rms, 1e-9)
+
+class TestStabielePunten(unittest.TestCase):
+
+    def test_losse_ruis_valt_weg_vaste_punten_blijven(self):
+        rng = random.Random(4)
+        wall = [(1.0, 0.01 * i) for i in range(50)]
+        scans = []
+        for _ in range(30):
+            ghost = [(rng.uniform(0, 2), rng.uniform(0, 2)) for _ in range(20)]
+            flaky = [(0.5, 0.5)] if rng.random() < 0.4 else []   # slecht weerkaatsend: 40%
+            scans.append([(x + rng.gauss(0, 0.002), y) for x, y in wall] + ghost + flaky)
+        kept = stable_points(scans)
+        self.assertGreaterEqual(len(kept), 45)
+        self.assertTrue(any(math.dist(p, (0.5, 0.5)) < 0.02 for p in kept))
+        self.assertLess(sum(1 for p in kept if abs(p[0] - 1.0) > 0.02 and
+                            math.dist(p, (0.5, 0.5)) > 0.02), 3)
 
 
-class TestWielen(unittest.TestCase):
+class TestKarMeten(unittest.TestCase):
+    """Synthetische scans. Grenzen = wat de aanpak haalt: midden van de punten per wiel is
+    niet de draai-as. Een slecht zichtbaar achterwiel (4 punten) geeft ~2 cm / 2 graden;
+    diepte hangt af van hoe de wielen staan (dwars: ~8 cm; depth_offset)."""
 
-    def test_wiel_in_elke_stand(self):
-        sensor = (0.0, 0.0, 0.0)
-        for yaw in range(0, 180, 15):   # van opzij, schuin en met de kop naar de lidar
-            a = math.radians(yaw)
-            box = ((1.0, 0.1), a)
-            center, angle, rms = fit_wheel(scan(sensor, [box]), sensor[:2], WHEEL_L, WHEEL_W)
-            self.assertLess(math.dist(center, box[0]), 0.005, f'{yaw} graden')   # hoekstap
-            diff = abs((angle - a + math.pi / 2) % math.pi - math.pi / 2)
-            self.assertLess(diff, math.radians(3), f'{yaw} graden')
+    def check(self, result, why, side=0.025, angle=2.5):
+        self.assertIsNotNone(result, why)
+        depth, lateral, turn = error(result['pose'])
+        self.assertLess(lateral, side)
+        self.assertLess(turn, angle)
+        self.assertLess(depth, 0.10)
 
-    def test_wiel_met_gaten(self):
-        # Ijzeren delen weerkaatsen niet: stukken van de streep ontbreken.
-        sensor = (0.0, 0.0, 0.0)
-        box = ((1.2, 0.05), math.radians(80))
-        points = scan(sensor, [box])
-        n = len(points)
-        holes = points[:n // 3] + points[n // 3 + 4:2 * n // 3] + points[2 * n // 3 + 3:]
-        self.assertLess(max(math.dist(a, b) for a, b in zip(holes, holes[1:])), 0.08)
-        wheels = find_wheels(holes, sensor[:2], WHEEL_L, WHEEL_W, max_gap=0.08)
-        self.assertEqual(len(wheels), 1)
-        self.assertLess(math.dist(wheels[0][0], box[0]), 0.01)
+    def test_scheve_startgok_wielen_verschillend_gedraaid(self):
+        sensor = compose(CART, (-1.3, 0.1, 0.1))
+        prior = compose(CART, (0.15, -0.12, math.radians(5)))   # AMCL zit ernaast
+        self.check(*measure(scan(sensor, wheel_boxes()), prior))
 
-    def test_stoelpoot_is_geen_wiel(self):
-        sensor = (0.0, 0.0, 0.0)
-        for size in (0.02, 0.025):   # buizen van 2-3 cm; schuin gezien tot ~3,5 cm
-            legs = [((1.0, y), 0.3, size, size) for y in (-0.3, 0.0, 0.3)]
-            self.assertEqual(find_wheels(scan(sensor, legs), sensor[:2], WHEEL_L, WHEEL_W), [],
-                             f'poot {size} m')
+    def test_wielen_recht_en_dwars(self):
+        sensor = compose(CART, (-1.3, 0.0, 0.0))
+        for yaw in (0, 90):   # alle vier dwars dezelfde kant op: midden schuift de naloop op
+            self.check(*measure(scan(sensor, wheel_boxes(yaws_deg=[yaw] * 4)),
+                                compose(CART, (-0.1, 0.1, -0.05))), side=TRAIL + 0.01)
 
-    def test_muur_is_geen_wiel(self):
-        sensor = (0.0, 0.0, 0.0)
-        self.assertEqual(find_wheels(scan(sensor, [], walls=[2.0]), sensor[:2], WHEEL_L, WHEEL_W), [])
+    def test_muur_achter_de_kar_en_stoelen_ernaast(self):
+        rng = random.Random(7)
+        clutter = [(transform(CART, (rng.choice([-1, 1]) * rng.uniform(0.8, 1.6),
+                                     rng.uniform(-1.2, 1.2))), rng.uniform(0, 3), 0.03, 0.03)
+                   for _ in range(25)]                       # stoelpoten rond de kar
+        clutter += [(transform(CART, (0.62, 0.0)), CART[2], 0.02, 3.0)]   # muur erachter
+        sensor = compose(CART, (-1.3, 0.05, 0.05))
+        points = [p for p in scan(sensor, wheel_boxes() + clutter, noise=0.005)
+                  if rng.random() > 0.25]                   # kwart van de punten weg
+        self.check(*measure(points, compose(CART, (0.2, 0.1, -0.05))))
 
-
-class TestKarVinden(unittest.TestCase):
-
-    def test_wielen_verschillend_gedraaid_exact(self):
-        sensor = compose(CART, (-1.4, 0.1, 0.1))
-        prior = compose(CART, (0.2, -0.15, math.radians(6)))   # AMCL zit ernaast
-        pose, n, _ = match_cart(wheels_seen(sensor), prior, CASTORS, 0.4, TRAIL)
-        self.assertEqual(n, 4)
-        dist, angle = error(pose)
-        self.assertLess(dist, 0.004)
-        self.assertLess(angle, 0.5)
-
-    def test_wielen_allemaal_dezelfde_kant_op_hooguit_trail(self):
-        sensor = compose(CART, (-1.4, 0.0, 0.0))
-        for yaw in (0, 90, 30):
-            boxes = wheel_boxes(yaws_deg=[yaw] * 4)
-            pose, n, _ = match_cart(wheels_seen(sensor, boxes), CART, CASTORS, 0.4, TRAIL)
-            self.assertGreaterEqual(n, 3)
-            dist, angle = error(pose)
-            self.assertLess(dist, TRAIL + 0.004, f'{yaw} graden')
-            self.assertLess(angle, 0.5)
-
-    def test_twee_goed_geziene_wielen_kiezen_de_juiste_kant(self):
-        # Alleen de twee voorste wielen (nameting): voor/achter de as is wel te zien.
-        sensor = compose(CART, (-1.0, 0.0, 0.0))
-        front = [c for c in CASTORS if c[0] < 0]
-        pose, n, _ = match_cart(wheels_seen(sensor), compose(CART, (0.04, 0.02, 0.03)), front,
-                                0.12, TRAIL, max_turn=math.radians(6), flip_margin=0.008)
-        self.assertEqual(n, 2)
-        self.assertLess(error(pose)[0], 0.005)
-
-    def test_met_ruis_van_mediaan_over_scans(self):
-        # mediaan van 10 scans met 1 cm ruis (Gazebo) ~ 4 mm ruis
-        for seed in range(5):
-            rng = random.Random(seed)
-            sensor = compose(CART, (-1.4, rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1)))
-            points = [(x + rng.gauss(0, 0.004), y + rng.gauss(0, 0.004))
-                      for x, y in scan(sensor, wheel_boxes())]
-            wheels = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W)
-            pose, n, _ = match_cart(wheels, CART, CASTORS, 0.4, TRAIL)
-            self.assertGreaterEqual(n, 3)
-            self.assertLess(error(pose)[0], 0.015)
+    def test_geen_kar_geen_resultaat(self):
+        sensor = compose(CART, (-1.3, 0.0, 0.0))
+        result, why = measure(scan(sensor, [], walls=[8.0]), CART)
+        self.assertIsNone(result)
+        self.assertTrue(why)
 
     def test_wiel_in_de_rijbaan(self):
         lane, half_x = 0.245 + 0.02, 0.35
@@ -177,8 +160,47 @@ class TestKarVinden(unittest.TestCase):
         inward = scan(sensor, wheel_boxes(yaws_deg=[20, 110, 90, 75]))   # wiel 2 recht naar binnen
         self.assertGreater(len(points_in_lane(inward, CART, half_x, lane)), 0)
 
-    def test_geen_kar_geen_match(self):
-        self.assertIsNone(match_cart([((0.0, 0.0), 0.0)], CART, CASTORS, 0.4, TRAIL))
+
+class TestEchteKar(unittest.TestCase):
+    """Drie echte scans van de zorgkar: de kar moet gevonden worden, en op dezelfde plek, ook
+    als AMCL er anders naast zit."""
+
+    def check(self, name, side=0.005, angle=0.5, may_miss=False):
+        """Rond de opgegeven plek met andere startgokken meten: alle uitkomsten liggen bij
+        elkaar. may_miss: niet vinden mag (slecht zichtbaar wiel), verkeerd vinden niet."""
+        with open(os.path.join(DATA, name)) as f:
+            d = json.load(f)
+        rng = random.Random(11)
+        priors = [d['prior']] + [compose(d['prior'], (rng.uniform(-0.15, 0.15),
+                                                      rng.uniform(-0.15, 0.15),
+                                                      math.radians(rng.uniform(-5, 5))))
+                                 for _ in range(8)]
+        found = []
+        for prior in priors:
+            r, why = measure(d['points'], prior)
+            if r is None and may_miss:
+                continue
+            self.assertIsNotNone(r, f'{name}: {why}')
+            found.append(r['pose'])
+        if not may_miss:
+            self.assertEqual(len(found), len(priors))
+        for pose in found[1:]:
+            depth, lateral, turn = error(pose, found[0])
+            self.assertLess(lateral, side, name)
+            self.assertLess(depth, 0.03, name)
+            self.assertLess(turn, angle, name)
+
+    # 1 en 2: oude, rafelige scans (mediaan van 10, zonder stabiele punten): ruimere grens.
+    # In 1 heeft het wiel rechtsachter maar 2 punten (plus een spookpunt): wordt niet
+    # gevonden (robot stopt met melding); de test bewaakt dat hij nooit iets verkeerds vindt.
+    def test_echte_kar_1(self):
+        self.check('echte_kar_1.json', 0.02, 1.5, may_miss=True)
+
+    def test_echte_kar_2(self):
+        self.check('echte_kar_2.json', 0.02, 1.5)
+
+    def test_echte_kar_3(self):
+        self.check('echte_kar_3.json')
 
 
 def drive(pose, v, w, dt=0.05):

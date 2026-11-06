@@ -95,21 +95,15 @@ def generate_launch_description():
         Node(
             package='my_bot', executable='WaypointTaskNode.py', name='waypoint_tasks',
             output='screen',
-            # Maten van de echte kar en robot in meter. NOG NAMETEN: nu de waarden van de
-            # simulatie. Uitleg en tekening: WaypointTaskNode.py en StartenSImulatie.md.
+            # Maten van de echte kar en robot in meter. Uitleg: WaypointTaskNode.py.
             parameters=[{
-                'dock_cart.cart_length': 0.70,   # buitenmaat kar in de rijrichting (zoekgebied)
-                'dock_cart.cart_width': 0.845,   # buitenmaat kar dwars (zoekgebied)
-                'dock_cart.search_margin': 0.25, # zoeken tot zover buiten de kar (AMCL-fout)
-                # castor_x, castor_y en trail afgeleid uit een lidarscan van de echte kar
-                # (wielmiddens 70 cm uit elkaar dwars); castor_x en trail samen onzeker (~1 cm).
-                'dock_cart.castor_x': 0.31,      # midden kar -> draaipunt zwenkwiel, in de lengte
-                'dock_cart.castor_y': 0.35,      # midden kar -> draaipunt zwenkwiel, in de breedte
-                'dock_cart.wheel_l': 0.19,      # lengte wiel op lidarhoogte (op ashoogte: diameter)
-                'dock_cart.wheel_w': 0.03,       # breedte wiel
-                'dock_cart.trail': 0.03,         # draaipunt -> midden wiel, van bovenaf
-                'dock_cart.wheel_gap': 0.08,     # grootste gat in de streep van één wiel
-                'dock_cart.wheel_rms': 0.02,     # zoveel mag de streep kronkelen (gemiddeld)
+                'dock_cart.cart_length': 0.70,   # buitenmaat kar in de rijrichting (ROI)
+                'dock_cart.cart_width': 0.845,   # buitenmaat kar dwars (ROI)
+                'dock_cart.search_margin': 0.25, # ROI tot zover buiten de kar (AMCL-fout)
+                # Lidar ziet alleen de voorkant van de wielen: zoveel verder ligt het echte
+                # midden. 0.055 = ingemeten in Gazebo (zelfde wielen). NAMETEN op de echte kar:
+                # na het docken: staat de robot X cm te kort, tel X/100 erbij op.
+                'dock_cart.depth_offset': 0.055,
                 'dock_cart.robot_half_width': 0.275,  # halve breedte robot (buitenkant wielen)
                 'dock_cart.axle_x': 0.13,        # draaipunt robot (midden wielas) t.o.v. base_link
             }]),

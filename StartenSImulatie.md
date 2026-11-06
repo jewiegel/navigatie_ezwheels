@@ -122,36 +122,36 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
 - **`dock_cart`** rijdt de robot nauwkeurig midden onder de kar. `params: {x, y, yaw}` is
   het midden van de kar in `map` (±10 cm en ±5° is genoeg), `yaw` de rijrichting van de
   robot eronder (hij rijdt erin vanaf de andere kant). Nav2 brengt de robot grof 1,4 m voor
-  de kar. Daar staat hij stil en meet de kar: de lidar zit op wielhoogte en ziet de vier
-  zwenkwielen als strepen; per streep volgen uit de bekende wielmaat het midden en de
-  richting van het wiel, en daaruit de draai-as (de naloop voor of achter het wiel); voor
-  deze eerste meting zijn minstens drie wielen nodig. Dan lijnt hij uit op de as van de kar,
-  1 m ervoor, en meet opnieuw met alleen de twee voorste wielen (die staan vol in beeld; de
-  achterste staan half achter de voorste). Dan rijdt hij recht naar binnen.
-  Gevarenlichten staan aan vanaf 1,4 m tot het einde.
-  - Nauwkeurigheid: wielen verschillend gedraaid ~0,5 cm; staan ze (bijna) allemaal
-    dezelfde kant op, dan is niet te zien of de assen voor of achter de wielen zitten en
-    is de fout tot de naloop (~4 cm).
-  - Liggen er scanpunten in de rijbaan onder de kar (naar binnen gedraaid wiel, iets op de
-    vloer), dan rijdt hij er niet in en meldt hij waar.
-  - Hij zoekt alleen binnen de buitenmaat van de kar (`cart_length` x `cart_width`) plus
-    `search_margin` (25 cm) rondom; alles daarbuiten (stoelen, banken, muren) telt niet mee.
-    Strepen smaller dan 75% van de wielbreedte (dunne poten) tellen ook niet als wiel. De
-    opgegeven kar plus de AMCL-fout moet dus binnen ~25 cm kloppen.
-  - Meekijken: RViz/Foxglove, MarkerArray `/dock_cart/markers` (frame `odom`). Geel: het
-    zoekgebied en waar de draaipunten verwacht worden; oranje: de gevonden wielen; groen:
-    de gemeten kar.
-  - Niet gevonden: de melding noemt per verwacht draaipunt het dichtstbijzijnde wiel (cm),
-    en de scan staat in `~/.ros/dock_cart_<datum>_<tijd>.json` (om na te kijken).
+  de kar. Daar staat hij stil en meet de kar in een ROI (`CartRoi.py`), zonder
+  wielherkenning: de buitenmaat van de kar plus `search_margin` (25 cm) rond de opgegeven
+  plek; alles daarbuiten (stoelen, banken, muren) telt niet mee. In de ROI zoekt hij de vrije
+  rijbaan (minstens de robotbreedte); links en rechts daarvan het voor- en achterwiel (elk
+  hooguit 22 cm lang, gemeten vanaf de binnenkant: een muur vlak achter de kar telt zo niet
+  mee). Het midden tussen de vier groepjes punten is de middellijn; de diepte krijgt er
+  `depth_offset` bij (de lidar ziet alleen de voorkant van de wielen). Daarna nog twee keer
+  meten met een krappe ROI rond de uitkomst. Dan lijnt hij uit, 1 m voor de kar, meet opnieuw
+  en rijdt recht naar binnen. Gevarenlichten staan aan vanaf 1,4 m tot het einde.
+  - Nauwkeurigheid in Gazebo (3 proeven, AMCL 6-8 cm ernaast): ~1 cm diepte, ~6 mm opzij,
+    < 0,5 graden. Echte opname: herhaalbaar binnen ~6 mm en 0,7 graden.
+  - Staan de wielen anders gedraaid (kar verschoven), dan schuift het midden mee: tot ~3 cm
+    als alle vier dwars dezelfde kant op staan.
+  - Liggen er scanpunten in de rijbaan onder de kar (naar binnen gedraaid wiel, tape, iets
+    op de vloer), dan rijdt hij er niet in en meldt hij waar.
+  - Niets vlak naast de wielen laten staan (binnen ~15 cm): dat telt mee als wiel. Is een
+    wiel nauwelijks zichtbaar, dan meldt hij "geen voor- en achterwiel te onderscheiden".
+  - Meekijken: RViz/Foxglove, MarkerArray `/dock_cart/markers` (frame `odom`). Geel: de ROI;
+    oranje: midden van de punten per wiel; groen: de gemeten kar. Elke meting staat in
+    `~/.ros/dock_cart_<datum>_<tijd>.json` (om na te kijken).
   - Resultaat in de log van `waypoint_tasks`. In de simulatie staat de kar vast op
     (6,0; 6,6), zie route `kar_docken`. Los proberen:
   ```bash
   ros2 action send_goal /dock_cart my_bot_interfaces/action/WaypointTask \
     '{params_json: "{\"x\": 6.0, \"y\": 6.6, \"yaw\": 0.0}"}' --feedback
   ```
-  - Echte kar/robot: zet de maten in de parameters van `waypoint_tasks` in `robot.launch.py`
-    (`dock_cart.cart_length`, `cart_width`, `search_margin`, `castor_x`, `castor_y`,
-    `wheel_l`, `wheel_w`, `trail`, `axle_x`, `robot_half_width`, zie `WaypointTaskNode.py`). `wheel_l` is de lengte van het wiel op lidarhoogte.
+  - Echte kar/robot: parameters van `waypoint_tasks` in `robot.launch.py`
+    (`dock_cart.cart_length`, `cart_width`, `search_margin`, `depth_offset`, `axle_x`,
+    `robot_half_width`, zie `WaypointTaskNode.py`). `depth_offset` één keer inmeten: staat
+    de robot na het docken X cm te kort voor het kar-midden, tel X/100 erbij op.
   - Na het docken niet draaien onder de kar: zet (nog) geen waypoint na `dock_cart`.
 - Waypoints minstens ~0,6 m van muren; anders blijft de robot op "geblokkeerd" staan.
 - **Laat de pijl naar het volgende waypoint wijzen.** Anders draait de robot op het
