@@ -47,7 +47,7 @@ staat op (0, 0); dat is ook de beginpositie van AMCL.
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
 | `foxglove` | `true` |
 
-De lidar zit in de simulatie op wielhoogte (10 cm, blikveld ±100°), zoals op de echte
+De lidar zit in de simulatie op wielhoogte (16,5 cm, blikveld ±100°), zoals op de echte
 robot. De simulatie gebruikt dezelfde topics als de robot (`/laser_1/scan_filtered`, `/odom`,
 `/cmd_vel`). `config/nav2_params.yaml` (simulatie) en `nav2_params_robot.yaml`
 verschillen alleen in `inflation_radius` (0,55 / 0,80 m), `base_frame_id` en
@@ -124,14 +124,16 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
   robot eronder (hij rijdt erin vanaf de andere kant). Nav2 brengt de robot grof 1,4 m voor
   de kar. Daar staat hij stil en meet de kar: de lidar zit op wielhoogte en ziet de vier
   zwenkwielen als strepen; per streep volgen uit de bekende wielmaat het midden en de
-  richting van het wiel, en daaruit de draai-as (de naloop voor of achter het wiel). Dan
-  lijnt hij uit op de as van de kar, 1 m ervoor, meet opnieuw en rijdt recht naar binnen.
+  richting van het wiel, en daaruit de draai-as (de naloop voor of achter het wiel); voor
+  deze eerste meting zijn minstens drie wielen nodig. Dan lijnt hij uit op de as van de kar,
+  1 m ervoor, en meet opnieuw met alleen de twee voorste wielen (die staan vol in beeld; de
+  achterste staan half achter de voorste). Dan rijdt hij recht naar binnen.
   Gevarenlichten staan aan vanaf 1,4 m tot het einde.
   - Nauwkeurigheid: wielen verschillend gedraaid ~0,5 cm; staan ze (bijna) allemaal
     dezelfde kant op, dan is niet te zien of de assen voor of achter de wielen zitten en
     is de fout tot de naloop (~4 cm).
-  - Staat een zwenkwiel naar binnen in de rijbaan, dan rijdt hij er niet in en meldt hij
-    welk wiel.
+  - Liggen er scanpunten in de rijbaan onder de kar (naar binnen gedraaid wiel, iets op de
+    vloer), dan rijdt hij er niet in en meldt hij waar.
   - Hij zoekt alleen binnen de buitenmaat van de kar (`cart_length` x `cart_width`) plus
     `search_margin` (25 cm) rondom; alles daarbuiten (stoelen, banken, muren) telt niet mee.
     Strepen smaller dan 75% van de wielbreedte (dunne poten) tellen ook niet als wiel. De
@@ -235,12 +237,15 @@ docker exec mqtt_test mosquitto_pub -t robot/start -m 1   # startknop
 docker stop mqtt_test
 ```
 
-**Rolcontainer** (`models/rolcontainer`, naar de echte kar: 0,845 m breed, 0,70 m lang,
-wielen 20,5 cm, open kant langs +x, statisch). `sim.launch.py` zet er één vast neer als
-`kar` op (6,0; 6,6) (`CART_POSE`). De bodem staat op korte poten: 0,33 m vrije
-hoogte (hoger dan de echte kar, zodat de gesimuleerde robot van 0,275 m eronder past) en
-0,645 m tussen de wielen; de robot rijdt erin langs de x-as van de kar. De gaashekken
-(1,5 m) zijn niet nagemeten.
+**Rolcontainer** (`models/rolcontainer`, nagebouwd naar de echte zorgkar: 0,845 m breed,
+0,70 m lang, open kant langs +x, statisch). `sim.launch.py` zet er één vast neer als `kar`
+op (6,0; 6,6) (`CART_POSE`). Zwenkwielen van 22 cm, 3 cm dik, draai-assen 0,62 x 0,70 m,
+3 cm naloop, met aan beide kanten een ijzeren beugel (boog over het wiel; op lidarhoogte
+alleen de uiteinden). Afgeleid uit lidarscans van de echte kar: de gesimuleerde lidar ziet
+dezelfde soort streep (wiel + puntjes van de beugel). Verschil: het ijzer en zwarte rubber
+weerkaatsen in het echt slecht (gaten, losse punten); Gazebo ziet alles. De bodem staat op
+korte poten: 0,33 m vrije hoogte (hoger dan de echte kar, zodat de gesimuleerde robot
+eronder past). De gaashekken (1,5 m) zijn niet nagemeten.
 Zet er één neer terwijl de simulatie draait (`-Y` = draaiing in rad):
 
 ```bash
@@ -248,8 +253,9 @@ ros2 run ros_gz_sim create -name kar1 -x 1.5 -y 0.15 -Y 1.57 \
   -file /ros2_ws/install/my_bot/share/my_bot/models/rolcontainer/model.sdf
 ```
 
-Elke kar een eigen `-name`. De lidar (op 0,10 m) ziet van de kar alleen de zwenkwielen.
-Die hebben 4 cm naloop en staan elk anders (20°, 110°, -45°, 75°); een andere stand:
+Elke kar een eigen `-name`. De lidar (op 0,165 m) ziet van de kar alleen de zwenkwielen
+en de uiteinden van de beugels. De wielen staan elk anders (20°, 160°, -15°, 35°); een
+andere stand (let op: een wiel ver naar binnen blokkeert de robot):
 `python3 maak_model.py 0 0 0 0 > model.sdf` (graden, kar-frame). Maten of kleuren
 aanpassen: in `models/rolcontainer/maak_model.py`, dan `python3 maak_model.py > model.sdf`
 en `my_bot` bouwen.

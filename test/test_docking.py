@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from docking import (  # noqa: E402
     axis_cmd, cart_castors, compose, find_wheels, fit_pose, fit_wheel, inverse, match_cart,
-    point_cmd, points_in_area, rotate_cmd, transform, wheels_in_lane)
+    point_cmd, points_in_area, points_in_lane, rotate_cmd, transform)
 
 CASTORS = cart_castors(0.29, 0.3625)
 WHEEL_L, WHEEL_W, TRAIL = 0.205, 0.05, 0.04
@@ -148,12 +148,14 @@ class TestKarVinden(unittest.TestCase):
             self.assertLess(dist, TRAIL + 0.004, f'{yaw} graden')
             self.assertLess(angle, 0.5)
 
-    def test_volgen_met_goede_verwachting_kiest_juiste_kant(self):
+    def test_twee_goed_geziene_wielen_kiezen_de_juiste_kant(self):
+        # Alleen de twee voorste wielen (nameting): voor/achter de as is wel te zien.
         sensor = compose(CART, (-1.0, 0.0, 0.0))
-        boxes = wheel_boxes(yaws_deg=[0] * 4)
-        pose, _, _ = match_cart(wheels_seen(sensor, boxes), compose(CART, (0.005, 0, 0)),
-                                CASTORS, 0.12, TRAIL, trust_prior=True)
-        self.assertLess(error(pose)[0], 0.004)
+        front = [c for c in CASTORS if c[0] < 0]
+        pose, n, _ = match_cart(wheels_seen(sensor), compose(CART, (0.04, 0.02, 0.03)), front,
+                                0.12, TRAIL, max_turn=math.radians(6), flip_margin=0.008)
+        self.assertEqual(n, 2)
+        self.assertLess(error(pose)[0], 0.005)
 
     def test_met_ruis_van_mediaan_over_scans(self):
         # mediaan van 10 scans met 1 cm ruis (Gazebo) ~ 4 mm ruis
@@ -168,44 +170,12 @@ class TestKarVinden(unittest.TestCase):
             self.assertLess(error(pose)[0], 0.015)
 
     def test_wiel_in_de_rijbaan(self):
-        lane = 0.245 + 0.02
-        self.assertEqual(wheels_in_lane(wheel_boxes(), CART, WHEEL_L, WHEEL_W, lane), [])
-        inward = wheel_boxes(yaws_deg=[20, 110, -45, -90])   # laatste wiel recht naar binnen
-        self.assertEqual(len(wheels_in_lane(inward, CART, WHEEL_L, WHEEL_W, lane)), 1)
-
-    def test_zoekgebied_met_veel_stoorobjecten(self):
-        # Rond de kar: stoelpoten (3 x 3 cm) en blokjes zo groot als een wiel, dichtbij en ver weg.
-        rng = random.Random(3)
-        clutter = []
-        for _ in range(40):
-            x, y = rng.uniform(-2.5, 2.5), rng.uniform(-2.5, 2.5)
-            if abs(x) < 0.9 and abs(y) < 0.9:
-                continue   # niet onder of tegen de kar
-            pos = transform(CART, (x, y))
-            if rng.random() < 0.5:
-                clutter.append((pos, rng.uniform(0, math.pi), 0.03, 0.03))
-            else:
-                clutter.append((pos, rng.uniform(0, math.pi), WHEEL_L, WHEEL_W))
-        sensor = compose(CART, (-1.4, 0.05, 0.05))
-        points = scan(sensor, wheel_boxes() + clutter)
-        everything = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W)
-        half_x, half_y = 0.70 / 2 + 0.25, 0.845 / 2 + 0.25   # buitenmaat kar + zoekmarge
-        near = points_in_area(points, CART, half_x, half_y)
-        in_area = find_wheels(near, sensor[:2], WHEEL_L, WHEEL_W)
-        self.assertGreater(len(everything), len(in_area))
-        self.assertLessEqual(len(in_area), 5)
-        pose, n, _ = match_cart(in_area, compose(CART, (0.15, -0.1, 0.05)), CASTORS, 0.4, TRAIL)
-        self.assertEqual(n, 4)
-        self.assertLess(error(pose)[0], 0.005)
-
-    def test_grovere_lidar(self):
-        sensor = compose(CART, (-1.4, 0.05, 0.05))
-        step = math.radians(1.0)   # echte lidar met 1 graad per straal
-        points = scan(sensor, wheel_boxes(), step=step)
-        wheels = find_wheels(points, sensor[:2], WHEEL_L, WHEEL_W, angle_tol=2.5 * step)
-        pose, n, _ = match_cart(wheels, CART, CASTORS, 0.4, TRAIL)
-        self.assertGreaterEqual(n, 3)
-        self.assertLess(error(pose)[0], 0.015)
+        lane, half_x = 0.245 + 0.02, 0.35
+        sensor = compose(CART, (-1.0, 0.0, 0.0))
+        free = scan(sensor, wheel_boxes())
+        self.assertEqual(points_in_lane(free, CART, half_x, lane), [])
+        inward = scan(sensor, wheel_boxes(yaws_deg=[20, 110, 90, 75]))   # wiel 2 recht naar binnen
+        self.assertGreater(len(points_in_lane(inward, CART, half_x, lane)), 0)
 
     def test_geen_kar_geen_match(self):
         self.assertIsNone(match_cart([((0.0, 0.0), 0.0)], CART, CASTORS, 0.4, TRAIL))

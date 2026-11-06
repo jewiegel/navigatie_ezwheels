@@ -21,7 +21,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from docking import (
     axis_candidates, axis_cmd, cart_castors, compose, find_wheels, inverse, match_cart,
-    point_cmd, points_in_area, rotate_cmd, transform, wheels_in_lane)
+    point_cmd, points_in_area, points_in_lane, rotate_cmd, transform)
 from .WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
 
 APPROACH_M = 1.4          # Nav2 brengt het midden van de robot zover voor het kar-midden
@@ -77,11 +77,12 @@ class DockCarTask(WaypointTaskServerBase):
         def param(name, default):
             return node.declare_parameter(f'dock_cart.{name}', default).value
 
-        # Maten van de kar en de robot; standaard die van de simulatie.
-        self._castors = cart_castors(param('castor_x', 0.29), param('castor_y', 0.3625))
-        self._wheel_l = param('wheel_l', 0.205)   # wiel op lidarhoogte: lengte (koorde) ...
-        self._wheel_w = param('wheel_w', 0.05)    # ... en breedte
-        self._trail = param('trail', 0.04)        # naloop: draai-as tot wielmidden
+        # Maten van de kar (standaard de echte kar, ook nagebouwd in de simulatie) en de robot
+        # (standaard de gesimuleerde).
+        self._castors = cart_castors(param('castor_x', 0.31), param('castor_y', 0.35))
+        self._wheel_l = param('wheel_l', 0.19)   # wiel op lidarhoogte: lengte (koorde) ...
+        self._wheel_w = param('wheel_w', 0.03)    # ... en breedte
+        self._trail = param('trail', 0.03)        # naloop: draai-as tot wielmidden
         # Een wielstreep mag gaten hebben (stukken die niet weerkaatsen) en kronkelen.
         self._wheel_gap = param('wheel_gap', 0.08)   # grootste gat binnen één wiel
         self._wheel_rms = param('wheel_rms', 0.02)   # gemiddelde afwijking van de wielvorm
@@ -126,13 +127,13 @@ class DockCarTask(WaypointTaskServerBase):
                 odom_map = _pose_2d(self._tf.lookup_transform('odom', 'map', Time()))
             except TransformException as e:
                 raise _Abort(f'geen map -> odom ({e})')
-            self._cart, _ = self._measure(compose(odom_map, target), self._margin, False)
+            self._cart, _ = self._measure(compose(odom_map, target), self._margin, check=False)
             for attempt in range(1, STAGE_ATTEMPTS + 1):
                 feedback(f'uitlijnen voor de kar (poging {attempt})')
                 stage = (self._axle_x - STAGE_M, 0.0)   # wielas STAGE_M voor de gedockte plek
                 self._run(lambda: point_cmd(self._axle(), transform(self._cart, stage)))
                 self._run(lambda: self._rotate_cmd())
-                self._cart, wheels = self._measure(self._cart, GATE_CHECK, True)
+                self._cart, points = self._measure(self._cart, GATE_CHECK, check=True)
                 _, y, th = self._rel(self._axle())
                 self._log.info(f'Uitgelijnd voor de kar: y={1000 * y:+.1f} mm, '
                                f'hoek={math.degrees(th):+.2f} graden')
@@ -140,13 +141,17 @@ class DockCarTask(WaypointTaskServerBase):
                     break
             else:
                 raise _Abort('lukt niet om recht voor de kar te komen')
-            blocking = wheels_in_lane(wheels, self._cart, self._wheel_l, self._wheel_w,
+            # Iets in de rijbaan onder de kar (naar binnen gedraaid wiel, beugel, iets op de
+            # vloer)? Direct op de scanpunten, niet op de geschatte wielen.
+            # Alleen onder de kar zelf: verder dan de achterkant van de kar komt de robot niet.
+            # Eén los punt telt niet (een echte lidar geeft soms een spookpunt aan een rand).
+            blocking = points_in_lane(points, self._cart, self._cart_half[0],
                                       self._half_width + LANE_MARGIN)
-            if blocking:
-                where = ', '.join('({:+.2f}, {:+.2f})'.format(*self._rel((*c, a))[:2])
-                                  for c, a in blocking)
-                raise _Abort(f'zwenkwiel staat in de rijbaan (kar-frame x, y: {where}); '
-                             'wiel rechtzetten en opnieuw proberen')
+            if len(blocking) >= 2:
+                x, y, _ = self._rel((*blocking[0], 0.0))
+                raise _Abort(f'iets in de rijbaan onder de kar ({len(blocking)} scanpunten, '
+                             f'o.a. kar-frame x {x:+.2f}, y {y:+.2f}): naar binnen gedraaid '
+                             'zwenkwiel? Rechtzetten en opnieuw proberen')
             feedback('onder de kar rijden')
             self._run(lambda: axis_cmd(self._rel(self._axle()), self._axle_x))
             self._run(lambda: self._rotate_cmd())
@@ -207,9 +212,10 @@ class DockCarTask(WaypointTaskServerBase):
 
     # ── Kar meten met de lidar ────────────────────────────────────────────────
 
-    def _measure(self, prior, gate, trust_prior):
+    def _measure(self, prior, gate, check):
         """Stilstaand SCANS scans nemen, per straal de mediaan, en daarin de kar zoeken rond
-        prior (odom). Geeft (pose van de kar, gevonden wielen), in odom."""
+        prior (odom). check: nameting (kar al gevonden). Geeft (pose van de kar, scanpunten
+        in het zoekgebied), in odom."""
         self._stop()
         time.sleep(SETTLE_S)
         with self._lock:
@@ -247,9 +253,21 @@ class DockCarTask(WaypointTaskServerBase):
         angle_tol = max(math.radians(2.5), 2.5 * abs(last.angle_increment))
         wheels = find_wheels(near, sensor[:2], self._wheel_l, self._wheel_w, self._wheel_gap,
                              max_rms=self._wheel_rms, angle_tol=angle_tol)
-        match = match_cart(wheels, prior, self._castors, gate, self._trail, trust_prior)
-        self._show(prior, half_x, half_y, wheels, match[0] if match and match[1] >= 3 else None)
-        if match is None or match[1] < 3:
+        # Eerste meting: minstens drie van de vier wielen, dan is het zeker de kar. Nameting
+        # (kar al gevonden): alleen de twee voorste wielen, aan de kant waar de robot erin
+        # rijdt. Die staan vol in beeld; de achterste staan half achter de voorste en geven
+        # met hun beugel rafelige strepen. Draaien mag alleen de fout van de eerste meting
+        # corrigeren (in de simulatie tot ~3,5 graden). Met alleen die twee goed geziene wielen
+        # is voor/achter de as al bij een klein verschil te onderscheiden (flip_margin).
+        if check:
+            castors, need, turn, flip = ([c for c in self._castors if c[0] < 0], 2,
+                                         math.radians(6.0), 0.008)
+        else:
+            castors, need, turn, flip = self._castors, 3, math.pi, 0.025
+        match = match_cart(wheels, prior, castors, gate, self._trail, min_wheels=need,
+                           max_turn=turn, flip_margin=flip)
+        self._show(prior, half_x, half_y, wheels, match[0] if match else None)
+        if match is None:
             nearest = []
             for c in self._castors:
                 e = transform(prior, c)
@@ -257,14 +275,14 @@ class DockCarTask(WaypointTaskServerBase):
                 nearest.append(f'{100 * min(d):.0f}' if d else '-')
             path = self._save(sensor, prior, gate, points, wheels)
             raise _Abort(f'kar niet gevonden: {len(wheels)} wielen in het zoekgebied '
-                         f'({2 * half_x:.1f} x {2 * half_y:.1f} m), geen drie op de verwachte '
+                         f'({2 * half_x:.1f} x {2 * half_y:.1f} m), geen {need} op de verwachte '
                          f'plek; dichtstbijzijnde wiel per draaipunt: {", ".join(nearest)} cm '
                          f'(zoekmarge {100 * gate:.0f} cm). Scan bewaard: {path}')
         pose, n, rms = match
         shift = math.dist(pose[:2], prior[:2])
         self._log.info(f'Kar gemeten: {n} wielen, fout {1000 * rms:.1f} mm, '
                        f'{1000 * shift:.0f} mm van de verwachting')
-        return pose, wheels
+        return pose, near
 
     def _show(self, prior, half_x, half_y, wheels, cart):
         """Markers op dock_cart/markers (odom): zoekgebied en verwachte draaipunten (geel),

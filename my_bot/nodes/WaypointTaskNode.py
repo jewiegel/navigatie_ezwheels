@@ -12,13 +12,13 @@ Interface:
           pub dock_cart/markers (visualization_msgs/MarkerArray, odom): zoekgebied, gevonden
               wielen en gemeten kar, voor RViz/Foxglove. Mislukt meten: scan in ~/.ros
 
-Parameters (dock_cart.*, standaard de simulatie):
+Parameters (dock_cart.*, standaard de echte kar, die ook in de simulatie staat):
   cart_length, cart_width  buitenmaat van de kar (zoekgebied)                (0.70, 0.845)
   search_margin       marge rond de kar en rond elk verwacht draaipunt        (0.25)
   castor_x, castor_y  halve lengte/breedte van de rechthoek van de draai-assen van de
-                      zwenkwielen van de kar                                  (0.29, 0.3625)
-  wheel_l, wheel_w    wiel op lidarhoogte: lengte (koorde) en breedte         (0.205, 0.05)
-  trail               naloop: horizontale afstand draai-as tot wielmidden     (0.04)
+                      zwenkwielen van de kar                                  (0.31, 0.35)
+  wheel_l, wheel_w    wiel op lidarhoogte: lengte (koorde) en dikte           (0.19, 0.03)
+  trail               naloop: horizontale afstand draai-as tot wielmidden     (0.03)
   wheel_gap           grootste gat in de streep van één wiel (niet-weerkaatsend
                       ijzer); groter = gaten overbruggen, maar wielen kleven aan
                       dingen ernaast                                          (0.08)

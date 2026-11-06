@@ -7,9 +7,9 @@
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_link"/>
-    <!-- Op wielhoogte (10 cm boven de vloer), net voor het chassis: zoals op de echte robot
-         ziet hij zo de zwenkwielen van de kar. -->
-    <origin xyz="0.30 0 -0.05"/>
+    <!-- Op 16,5 cm boven de vloer, net voor het chassis: zoals op de echte robot ziet hij zo
+         19 cm van een zwenkwiel van 22 cm (koorde) en de uiteinden van de wielbeugel. -->
+    <origin xyz="0.30 0 0.015"/>
   </joint>
 
   <link name="laser_link">

@@ -93,8 +93,9 @@ def find_wheels(points, sensor, length: float, width: float, max_gap: float = 0.
         c = points[i0:i1]
         extent = math.dist(c[0], c[-1])
         # Een wiel is van elke kant minstens zo breed als zijn breedte: dunnere strepen
-        # (stoel- en tafelpoten) en langere (muren) zijn geen wiel.
-        if len(c) < min_points or not 0.75 * width <= extent <= math.hypot(length, width) + 0.03:
+        # (stoel- en tafelpoten) zijn geen wiel, langere (muren) ook niet. Een paar cm extra
+        # voor de wielbeugel, die aan de uiteinden van de streep punten kan geven.
+        if len(c) < min_points or not 0.75 * width <= extent <= math.hypot(length, width) + 0.08:
             continue
         center, angle, rms = fit_wheel(c, sensor, length, width,
                                        (hidden(i0, i0 - 1), hidden(i1 - 1, i1)), angle_tol)
@@ -206,19 +207,20 @@ def fit_pose(model, measured):
     return pose, rms
 
 
-def match_cart(wheels, prior, castors, gate: float, trail: float, trust_prior: bool = False,
-               max_rms: float = 0.02):
+def match_cart(wheels, prior, castors, gate: float, trail: float, max_rms: float = 0.02,
+               min_wheels: int = 2, missing_cost: float = MISSING_COST,
+               max_turn: float = math.pi, flip_margin: float = FLIP_MARGIN):
     """Zoek de kar rond de verwachte pose prior. Elke draai-as mag een as-kandidaat van een
     wiel binnen gate van zijn verwachte plek krijgen (elk wiel hooguit één keer, minstens
-    2 wielen). De kleinste fout wint, met MISSING_COST per ontbrekend wiel: een slecht
-    herkend wiel weglaten is beter dan het meenemen.
+    min_wheels, hooguit max_turn gedraaid t.o.v. prior). De kleinste fout wint, met
+    missing_cost per ontbrekend wiel: een slecht herkend wiel weglaten is beter dan het
+    meenemen.
 
     Past ook de gespiegelde toewijzing (van elk wiel de andere as-kandidaat) bijna even
-    goed (hooguit FLIP_MARGIN slechter), dan staan
-    de wielen (bijna) allemaal dezelfde kant op en is niet te zien of de assen voor of
-    achter de wielen zitten. Dan het gemiddelde van beide (= midden van de wielen, hooguit
-    trail ernaast), of met trust_prior de oplossing die duidelijk het dichtst bij prior
-    ligt. Geeft (pose, aantal wielen, rms) of None.
+    goed (hooguit flip_margin slechter), dan staan de wielen (bijna) allemaal dezelfde kant
+    op en is niet te zien of de assen voor of achter de wielen zitten. Dan het gemiddelde
+    van beide (= midden van de wielen, hooguit trail ernaast). Geeft (pose, aantal wielen,
+    rms) of None.
     """
     cands = [(i, p) for i, w in enumerate(wheels) for p in axis_candidates(w, trail)]
     expected = [transform(prior, c) for c in castors]
@@ -232,10 +234,12 @@ def match_cart(wheels, prior, castors, gate: float, trail: float, trust_prior: b
     best = None
     for choice in itertools.product(*options):
         used = [k for k in choice if k is not None]
-        if len(used) < 2 or len({cands[k][0] for k in used}) != len(used):
+        if len(used) < max(2, min_wheels) or len({cands[k][0] for k in used}) != len(used):
             continue
         pose, rms = fit(choice)
-        cost = rms + MISSING_COST * (len(castors) - len(used))
+        cost = rms + missing_cost * (len(castors) - len(used))
+        if abs(wrap(pose[2] - prior[2])) > max_turn:
+            continue
         if rms <= max_rms and (best is None or cost < best[0]):
             best = (cost, len(used), pose, rms, choice)
     if best is None:
@@ -243,26 +247,18 @@ def match_cart(wheels, prior, castors, gate: float, trail: float, trust_prior: b
     _, n, pose, rms, choice = best
     if trail > 0:
         flipped, flipped_rms = fit([None if k is None else k ^ 1 for k in choice])
-        if flipped_rms <= rms + FLIP_MARGIN:
-            closer = math.dist(pose[:2], prior[:2]) - math.dist(flipped[:2], prior[:2])
-            if trust_prior and abs(closer) > trail / 2:
-                pose = flipped if closer > 0 else pose
-            else:
-                pose = ((pose[0] + flipped[0]) / 2, (pose[1] + flipped[1]) / 2,
-                        wrap(pose[2] + wrap(flipped[2] - pose[2]) / 2))
+        if flipped_rms <= rms + flip_margin:
+            pose = ((pose[0] + flipped[0]) / 2, (pose[1] + flipped[1]) / 2,
+                    wrap(pose[2] + wrap(flipped[2] - pose[2]) / 2))
     return pose, n, rms
 
 
-def wheels_in_lane(wheels, cart, length: float, width: float, half_lane: float):
-    """Wielen (midden, richting) waarvan de rechthoek binnen half_lane van de as van de kar
-    komt (kar-frame |y|), dus in de rijbaan van de robot staat."""
-    blocking = []
-    for (x, y), a in wheels:
-        _, wy, wa = compose(inverse(cart), (x, y, a))
-        reach = abs(length / 2 * math.sin(wa)) + abs(width / 2 * math.cos(wa))
-        if abs(wy) - reach < half_lane:
-            blocking.append(((x, y), a))
-    return blocking
+def points_in_lane(points, cart, half_x: float, half_lane: float):
+    """Scanpunten in de rijbaan van de robot onder de kar: kar-frame |x| <= half_x en
+    |y| < half_lane. Een naar binnen gedraaid wiel, zijn beugel of iets onder de kar."""
+    inv = inverse(cart)
+    return [p for p in points
+            if abs(transform(inv, p)[0]) <= half_x and abs(transform(inv, p)[1]) < half_lane]
 
 
 def _clamp(v, lo, hi):
