@@ -140,7 +140,12 @@ class DockCarTask(WaypointTaskServerBase):
                 if abs(y) <= STAGE_TOL_Y and abs(th) <= STAGE_TOL_TH:
                     break
             else:
-                raise _Abort('lukt niet om recht voor de kar te komen')
+                # Echte robot: meting en regelaar halen de tolerantie niet altijd terwijl hij er
+                # goed voor staat. Gewoon inrijden: axis_cmd stuurt onderweg naar de middellijn;
+                # de rijbaancontrole hieronder blijft.
+                self._log.warn(f'Uitlijnen niet binnen {1000 * STAGE_TOL_Y:.0f} mm / '
+                               f'{math.degrees(STAGE_TOL_TH):.1f} graden na {STAGE_ATTEMPTS} '
+                               'pogingen; toch inrijden')
             # Iets in de rijbaan onder de kar (naar binnen gedraaid wiel, beugel, iets op de
             # vloer)? Direct op de scanpunten, niet op de geschatte wielen.
             # Alleen onder de kar zelf: verder dan de achterkant van de kar komt de robot niet.
