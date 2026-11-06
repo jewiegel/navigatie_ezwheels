@@ -152,18 +152,19 @@ class DockCarTask(WaypointTaskServerBase):
             # Iets in de rijbaan onder de kar (naar binnen gedraaid wiel, beugel, iets op de
             # vloer)? Direct op de scanpunten, niet op de geschatte wielen.
             # Alleen onder de kar zelf: verder dan de achterkant van de kar komt de robot niet.
+            # Tot de achterkant van de kar plus drive_in_extra (daar komt base_link).
             # Stoppen alleen bij een echt obstakel: minstens LANE_BLOCK_POINTS punten binnen de
             # robotbreedte (naar binnen gedraaid wiel). Losse randpunten van wielbeugels of
             # punten in de LANE_MARGIN: alleen waarschuwen (echte robot: wielen ~32 cm uit het
             # midden, robot 27,5 cm, dus weinig speling).
-            blocking = points_in_lane(self._evidence, self._cart, self._cart_half[0],
+            blocking = points_in_lane(self._evidence, self._cart, self._cart_half[0] + self._extra,
                                       self._half_width)
             if len(blocking) >= LANE_BLOCK_POINTS:
                 x, y, _ = self._rel((*blocking[0], 0.0))
                 raise _Abort(f'iets in de rijbaan onder de kar ({len(blocking)} scanpunten, '
                              f'o.a. kar-frame x {x:+.2f}, y {y:+.2f}): naar binnen gedraaid '
                              'zwenkwiel? Rechtzetten en opnieuw proberen')
-            near = points_in_lane(self._evidence, self._cart, self._cart_half[0],
+            near = points_in_lane(self._evidence, self._cart, self._cart_half[0] + self._extra,
                                   self._half_width + LANE_MARGIN)
             if near:
                 ys = sorted(f'{100 * self._rel((*p, 0.0))[1]:+.1f}' for p in near)
