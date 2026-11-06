@@ -33,7 +33,8 @@ CHECK_MARGIN = 0.06       # nameting: zoveel mag de kar van de vorige meting lig
 SCANS = 30                # stilstaand zoveel scans nemen ...
 STABLE_FRACTION = 0.3     # ... en alleen punten houden die in 30% ervan terugkomen
 SETTLE_S = 0.5            # na stoppen even wachten voor de eerste scan
-LANE_MARGIN = 0.02        # m vrij tussen robot en een naar binnen gedraaid wiel
+LANE_MARGIN = 0.02        # m: punten zo dicht bij de robot geven een waarschuwing
+LANE_BLOCK_POINTS = 5     # zoveel punten binnen de robotbreedte = obstakel: niet inrijden
 NAV_TIMEOUT_S = 180.0
 MAX_RANGE_M = 3.0
 LOOP_S = 0.05
@@ -149,14 +150,23 @@ class DockCarTask(WaypointTaskServerBase):
             # Iets in de rijbaan onder de kar (naar binnen gedraaid wiel, beugel, iets op de
             # vloer)? Direct op de scanpunten, niet op de geschatte wielen.
             # Alleen onder de kar zelf: verder dan de achterkant van de kar komt de robot niet.
-            # Eén los punt telt niet (een echte lidar geeft soms een spookpunt aan een rand).
+            # Stoppen alleen bij een echt obstakel: minstens LANE_BLOCK_POINTS punten binnen de
+            # robotbreedte (naar binnen gedraaid wiel). Losse randpunten van wielbeugels of
+            # punten in de LANE_MARGIN: alleen waarschuwen (echte robot: wielen ~32 cm uit het
+            # midden, robot 27,5 cm, dus weinig speling).
             blocking = points_in_lane(self._evidence, self._cart, self._cart_half[0],
-                                      self._half_width + LANE_MARGIN)
-            if len(blocking) >= 2:
+                                      self._half_width)
+            if len(blocking) >= LANE_BLOCK_POINTS:
                 x, y, _ = self._rel((*blocking[0], 0.0))
                 raise _Abort(f'iets in de rijbaan onder de kar ({len(blocking)} scanpunten, '
                              f'o.a. kar-frame x {x:+.2f}, y {y:+.2f}): naar binnen gedraaid '
                              'zwenkwiel? Rechtzetten en opnieuw proberen')
+            near = points_in_lane(self._evidence, self._cart, self._cart_half[0],
+                                  self._half_width + LANE_MARGIN)
+            if near:
+                ys = sorted(f'{100 * self._rel((*p, 0.0))[1]:+.1f}' for p in near)
+                self._log.warn(f'{len(near)} scanpunt(en) dicht bij de rijbaan (kar-frame y in cm: '
+                               f'{", ".join(ys[:8])}); toch inrijden')
             feedback('onder de kar rijden')
             self._run(lambda: axis_cmd(self._rel(self._axle()), self._axle_x))
             self._run(lambda: self._rotate_cmd())
