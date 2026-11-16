@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'my_bot')))
 
-from docking import (  # noqa: E402
+from actions.docking import (  # noqa: E402
     axis_cmd, compose, inverse, measure_cart, point_cmd, points_in_lane, rotate_cmd,
     stable_points, transform)
 
