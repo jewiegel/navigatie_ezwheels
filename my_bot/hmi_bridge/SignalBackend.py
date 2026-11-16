@@ -29,3 +29,7 @@ class SignalBackend(ABC):
     @abstractmethod
     def latest_status(self) -> Optional[HMIStatus]:
         pass
+
+    @abstractmethod
+    def request_mode(self, mode: str) -> None:
+        """EZ-Way operating mode omzetten ('MANUAL', 'SERVICE', ...)."""

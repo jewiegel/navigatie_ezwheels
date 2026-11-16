@@ -22,3 +22,4 @@ class HMIStatus:
     start: bool = False
     stop: bool = False
     kar: bool = False          # karknop: startpositie terug en route kar_route_name
+    mode: str = ''             # modusknop: 'MANUAL' of 'SERVICE' (EZ-Way operating mode)

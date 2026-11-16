@@ -23,6 +23,7 @@ Interface:
   pub  initialpose     (geometry_msgs/PoseWithCovarianceStamped)  karknop: AMCL terug naar
        zijn ingestelde startpositie (parameters initial_pose.* van /amcl), daarna route
        kar_route_name; alleen als er geen missie loopt (IDLE of ARRIVED)
+  MQTT robot/manual, robot/service  -> EZ-Way operating_mode_cmd (amr_manager/request)
 
 Parameters:
   backend           'mqtt', of 'memory' zonder broker (tests, simulatie)   (mqtt)
@@ -177,6 +178,9 @@ class HMIBridgeNode(Node):
                 return
             self.get_logger().info(f'HMI: startknop -> route "{self.start_route_name}"')
             self._call(self.start_client, StartRoute.Request(route_name=self.start_route_name))
+        if status.mode:
+            self.get_logger().info(f'HMI: modusknop -> EZ-Way {status.mode}')
+            self.backend.request_mode(status.mode)
         if status.kar:
             state = self._mission.split(' ', 1)[0]
             if state not in ('', 'IDLE', 'ARRIVED'):

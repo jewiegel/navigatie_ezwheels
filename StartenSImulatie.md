@@ -206,6 +206,7 @@ die op de HMI werkte:
 | HMI → robot | `robot/start` = `1` | `start_route` met `start_route_name` (leeg = niets) |
 | HMI → robot | `robot/stop` = `1` | `cancel_mission` |
 | HMI → robot | `robot/kar` = `1` | AMCL terug naar `initial_pose`, na 1 s route `kar_route_name` (`kaas`); genegeerd tijdens een missie |
+| HMI → robot | `robot/manual`, `robot/service` = `1` | EZ-Way-modus: `operating_mode_cmd` op `amr_manager/request` (antwoord in het log) |
 
 Alles gaat bij een verandering en elke `heartbeat_s` (1 s). `/hmi/mqtt_connected` is
 `false` als de broker langer dan 3 s weg is.

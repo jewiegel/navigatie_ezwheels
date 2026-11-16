@@ -6,7 +6,9 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 
 from hmi_bridge.HMIMessages import HMIStatus, SignalCommand
-from hmi_bridge.PayloadCodec import TOPIC_KAR, TOPIC_START, TOPIC_STOP, PayloadCodec
+from hmi_bridge.PayloadCodec import (TOPIC_AMR_REQUEST, TOPIC_AMR_RESULT, TOPIC_KAR,
+                                     TOPIC_MANUAL, TOPIC_SERVICE, TOPIC_START, TOPIC_STOP,
+                                     PayloadCodec)
 from hmi_bridge.SignalBackend import SignalBackend
 
 
@@ -39,6 +41,9 @@ class MqttBackend(SignalBackend):
         for topic, payload in PayloadCodec.encode_command(cmd).items():
             self._client.publish(topic, payload)
 
+    def request_mode(self, mode: str):
+        self._client.publish(TOPIC_AMR_REQUEST, PayloadCodec.encode_mode_request(mode))
+
     def latest_status(self):
         return self._status
 
@@ -47,10 +52,14 @@ class MqttBackend(SignalBackend):
             self.log.error(f'MQTT-verbinding geweigerd (rc={rc})')
             return
         self.log.info(f'MQTT verbonden met {self.host}:{self.port}')
-        for topic in (TOPIC_START, TOPIC_STOP, TOPIC_KAR):    # opnieuw na elke (her)verbinding
+        for topic in (TOPIC_START, TOPIC_STOP, TOPIC_KAR, TOPIC_MANUAL, TOPIC_SERVICE,
+                      TOPIC_AMR_RESULT):    # opnieuw na elke (her)verbinding
             client.subscribe(topic)
 
     def _on_message(self, client, userdata, msg):
+        if msg.topic == TOPIC_AMR_RESULT:   # antwoord van EZ-Way (ook op andere verzoeken)
+            self.log.info(f'EZ-Way antwoord: {msg.payload.decode(errors="replace")}')
+            return
         self.log.info(f'HMI-bericht ontvangen: {msg.topic} = {msg.payload!r}')
         status = PayloadCodec.decode_status(msg.topic, msg.payload)
         if status is None:
