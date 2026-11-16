@@ -6,7 +6,7 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 
 from hmi_bridge.HMIMessages import HMIStatus, SignalCommand
-from hmi_bridge.PayloadCodec import TOPIC_START, TOPIC_STOP, PayloadCodec
+from hmi_bridge.PayloadCodec import TOPIC_KAR, TOPIC_START, TOPIC_STOP, PayloadCodec
 from hmi_bridge.SignalBackend import SignalBackend
 
 
@@ -47,7 +47,7 @@ class MqttBackend(SignalBackend):
             self.log.error(f'MQTT-verbinding geweigerd (rc={rc})')
             return
         self.log.info(f'MQTT verbonden met {self.host}:{self.port}')
-        for topic in (TOPIC_START, TOPIC_STOP):    # opnieuw na elke (her)verbinding
+        for topic in (TOPIC_START, TOPIC_STOP, TOPIC_KAR):    # opnieuw na elke (her)verbinding
             client.subscribe(topic)
 
     def _on_message(self, client, userdata, msg):

@@ -12,7 +12,7 @@ Robot -> HMI:
   robot/outputs/batterij                                 percentage als tekst, bv. "87"
                                                          (niet gestuurd zolang onbekend)
 HMI -> robot:
-  robot/start, robot/stop                                "1" = knop ingedrukt
+  robot/start, robot/stop, robot/kar                     "1" = knop ingedrukt
 """
 
 from typing import Dict, Optional
@@ -27,6 +27,7 @@ TOPIC_BATTERY = 'robot/outputs/batterij'
 TOPIC_STATE_ID = 'robot/outputs/state_id'
 TOPIC_START = 'robot/start'
 TOPIC_STOP = 'robot/stop'
+TOPIC_KAR = 'robot/kar'
 
 # MissionState -> statuswoorden die de HMI van de oude patrol_node kent
 PATROL_STATES = {
@@ -65,4 +66,6 @@ class PayloadCodec:
             return HMIStatus(start=True)
         if topic == TOPIC_STOP:
             return HMIStatus(stop=True)
+        if topic == TOPIC_KAR:
+            return HMIStatus(kar=True)
         return None

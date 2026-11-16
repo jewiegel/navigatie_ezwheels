@@ -205,6 +205,7 @@ die op de HMI werkte:
 | robot → HMI | `robot/patrol_state` | `idle`, `rijdend`, `wachten`, `voltooid`, `fout` |
 | HMI → robot | `robot/start` = `1` | `start_route` met `start_route_name` (leeg = niets) |
 | HMI → robot | `robot/stop` = `1` | `cancel_mission` |
+| HMI → robot | `robot/kar` = `1` | AMCL terug naar `initial_pose`, na 1 s route `kar_route_name` (`kaas`); genegeerd tijdens een missie |
 
 Alles gaat bij een verandering en elke `heartbeat_s` (1 s). `/hmi/mqtt_connected` is
 `false` als de broker langer dan 3 s weg is.

@@ -59,6 +59,7 @@ class TestPayloadCodec(unittest.TestCase):
                          HMIStatus(start=True))
         self.assertEqual(PayloadCodec.decode_status('robot/stop', b' 1\n'),
                          HMIStatus(stop=True))
+        self.assertEqual(PayloadCodec.decode_status('robot/kar', b'1'), HMIStatus(kar=True))
         self.assertIsNone(PayloadCodec.decode_status('robot/start', b'0'))
         self.assertIsNone(PayloadCodec.decode_status('robot/iets', b'1'))
 
