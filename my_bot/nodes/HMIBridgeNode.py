@@ -20,6 +20,10 @@ Interface:
        langer dan mqtt_timeout_s weg is (CommandWatchDog), bij elke verandering
   cli  start_route     (my_bot_interfaces/StartRoute)  startknop -> route start_route_name
   cli  cancel_mission  (std_srvs/Trigger)              stopknop
+  pub  initialpose     (geometry_msgs/PoseWithCovarianceStamped)  karknop: AMCL terug naar
+       zijn ingestelde startpositie (parameters initial_pose.* van /amcl), daarna route
+       kar_route_name; alleen als er geen missie loopt (IDLE of ARRIVED)
+  MQTT robot/manual, robot/service  -> EZ-Way operating_mode_cmd (amr_manager/request)
 
 Parameters:
   backend           'mqtt', of 'memory' zonder broker (tests, simulatie)   (mqtt)
@@ -31,12 +35,16 @@ Parameters:
   battery_empty_v   spanning bij 0 % (0 = percentage van de driver)       (0.0)
   battery_full_v    spanning bij 100 %                                    (0.0)
   start_route_name  route voor de startknop; leeg = startknop doet niets  ('')
+  kar_route_name    route voor de karknop (robot/kar)                     ('kaas')
 """
 import math
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
+from rclpy.parameter import parameter_value_to_python
+from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Bool, String
@@ -61,6 +69,7 @@ class HMIBridgeNode(Node):
         self.blink_period_s = self.declare_parameter('blink_period_s', 1.0).value
         mqtt_timeout_s = self.declare_parameter('mqtt_timeout_s', 3.0).value
         self.start_route_name = self.declare_parameter('start_route_name', '').value
+        self.kar_route_name = self.declare_parameter('kar_route_name', 'kaas').value
         self.battery_empty_v = self.declare_parameter('battery_empty_v', 21.0).value
         self.battery_full_v = self.declare_parameter('battery_full_v', 28.0).value
 
@@ -94,6 +103,9 @@ class HMIBridgeNode(Node):
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.start_client = self.create_client(StartRoute, 'start_route')
         self.cancel_client = self.create_client(Trigger, 'cancel_mission')
+        self.initialpose_pub = self.create_publisher(PoseWithCovarianceStamped, 'initialpose', 10)
+        self.amcl_params = AsyncParameterClient(self, 'amcl')
+        self._kar_timer = None
 
         self.backend.connect()
         self.create_timer(0.05, self.update)    # 50 ms: fijn genoeg voor de buzzerpatronen
@@ -166,6 +178,45 @@ class HMIBridgeNode(Node):
                 return
             self.get_logger().info(f'HMI: startknop -> route "{self.start_route_name}"')
             self._call(self.start_client, StartRoute.Request(route_name=self.start_route_name))
+        if status.mode:
+            self.get_logger().info(f'HMI: modusknop -> EZ-Way {status.mode}')
+            self.backend.request_mode(status.mode)
+        if status.kar:
+            state = self._mission.split(' ', 1)[0]
+            if state not in ('', 'IDLE', 'ARRIVED'):
+                self.get_logger().warn(f'HMI: karknop genegeerd, missie loopt ({self._mission})')
+                return
+            if not self.amcl_params.services_are_ready():
+                self.get_logger().error('HMI: karknop, maar /amcl is niet bereikbaar')
+                return
+            self.get_logger().info(
+                f'HMI: karknop -> startpositie terug, dan route "{self.kar_route_name}"')
+            self.amcl_params.get_parameters(
+                ['initial_pose.x', 'initial_pose.y', 'initial_pose.yaw'], self._reset_pose)
+
+    def _reset_pose(self, future):
+        try:
+            x, y, yaw = (float(parameter_value_to_python(v)) for v in future.result().values)
+        except (TypeError, ValueError):    # parameter ontbreekt (NOT_SET) of niet numeriek
+            self.get_logger().error('Karknop: initial_pose.* van /amcl niet te lezen')
+            return
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.pose.position.x, msg.pose.pose.position.y = x, y
+        msg.pose.pose.orientation.z = math.sin(yaw / 2)
+        msg.pose.pose.orientation.w = math.cos(yaw / 2)
+        msg.pose.covariance[0] = msg.pose.covariance[7] = 0.25  # zoals RViz' 2D Pose Estimate
+        msg.pose.covariance[35] = 0.0685
+        self.initialpose_pub.publish(msg)
+        self.get_logger().info(f'Startpositie teruggezet: x={x:.3f} y={y:.3f} yaw={yaw:.3f}')
+        # AMCL zet map->odom pas bij de volgende scans om; wacht even zodat Nav2 vanaf de
+        # nieuwe positie plant
+        self._kar_timer = self.create_timer(1.0, self._start_kar_route)
+
+    def _start_kar_route(self):
+        self.destroy_timer(self._kar_timer)
+        self._call(self.start_client, StartRoute.Request(route_name=self.kar_route_name))
 
     def _call(self, client, request):
         if not client.service_is_ready():

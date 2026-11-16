@@ -47,7 +47,8 @@ staat op (0, 0); dat is ook de beginpositie van AMCL.
 | `timing_file` | `share/hospital_robot_bringup/config/timing.yaml` |
 | `foxglove` | `true` |
 
-De simulatie gebruikt dezelfde topics als de robot (`/laser_1/scan_filtered`, `/odom`,
+De lidar zit in de simulatie op wielhoogte (16,5 cm, blikveld ±100°), zoals op de echte
+robot. De simulatie gebruikt dezelfde topics als de robot (`/laser_1/scan_filtered`, `/odom`,
 `/cmd_vel`). `config/nav2_params.yaml` (simulatie) en `nav2_params_robot.yaml`
 verschillen alleen in `inflation_radius` (0,55 / 0,80 m), `base_frame_id` en
 `use_sim_time`.
@@ -59,7 +60,7 @@ verschillen alleen in `inflation_radius` (0,55 / 0,80 m), `base_frame_id` en
 ```bash
 ros2 service call /start_route my_bot_interfaces/srv/StartRoute "{route_name: gang_b}"
 ros2 service call /cancel_mission std_srvs/srv/Trigger
-ros2 topic echo /mission_status       # IDLE, DRIVING, ARRIVED, WAITING_OPERATOR (+ route)
+ros2 topic echo /mission_status       # IDLE, DRIVING, EXECUTING_TASKS, ARRIVED, WAITING_OPERATOR (+ route)
 ```
 
 Na `ARRIVED` kan direct een nieuwe route; na `WAITING_OPERATOR` eerst `cancel_mission`.
@@ -101,6 +102,57 @@ Routes staan in het `routes_file` en worden bij elke aanvraag opnieuw gelezen.
 3. **Bekijken:** `ros2 service call /get_route my_bot_interfaces/srv/GetRoute "{name: gang_c}"`
    (ook als pijlen op `/route_preview`).
 
+- **Acties op een waypoint** (optioneel): na aankomst voert de mission_manager ze na
+  elkaar uit (`EXECUTING_TASKS`), daarna rijdt de robot verder, ook als een actie
+  mislukt (na `max_retries` extra pogingen, standaard 1). Zie route `acties_demo`:
+  ```yaml
+  - name: keerpunt
+    x: 3.19
+    y: 0.21
+    yaw: 3.14
+    actions:
+    - {type: wait, params: {seconds: 3}}
+    - {type: spin, params: {angle: 6.283}, max_retries: 0}
+  ```
+  Beschikbaar: `wait` en `spin` (Nav2 behavior_server) en `dock_cart` (zie hieronder).
+  Nieuwe actie: een klasse op `WaypointTaskServerBase` in `my_bot/actions/`, toevoegen
+  aan `tasks` in `my_bot/nodes/WaypointTaskNode.py` en de naam aan de lijst in
+  `register_tasks()` in `my_bot/nodes/MissionManagerNode.py`. De route gaat in stukken
+  naar Nav2, elk stuk eindigt op een waypoint met acties: daar stopt de robot.
+- **`dock_cart`** rijdt de robot nauwkeurig midden onder de kar. `params: {x, y, yaw}` is
+  het midden van de kar in `map` (±10 cm en ±5° is genoeg), `yaw` de rijrichting van de
+  robot eronder (hij rijdt erin vanaf de andere kant). Nav2 brengt de robot grof 1,4 m voor
+  de kar. Daar staat hij stil en meet de kar in een ROI (`CartRoi.py`), zonder
+  wielherkenning: de buitenmaat van de kar plus `search_margin` (25 cm) rond de opgegeven
+  plek; alles daarbuiten (stoelen, banken, muren) telt niet mee. In de ROI zoekt hij de vrije
+  rijbaan (minstens de robotbreedte); links en rechts daarvan het voor- en achterwiel (elk
+  hooguit 22 cm lang, gemeten vanaf de binnenkant: een muur vlak achter de kar telt zo niet
+  mee). Het midden tussen de vier groepjes punten is de middellijn; de diepte krijgt er
+  `depth_offset` bij (de lidar ziet alleen de voorkant van de wielen). Daarna nog twee keer
+  meten met een krappe ROI rond de uitkomst. Dan lijnt hij uit, 1 m voor de kar, meet opnieuw
+  en rijdt recht naar binnen. Gevarenlichten staan aan vanaf 1,4 m tot het einde.
+  - Nauwkeurigheid in Gazebo (3 proeven, AMCL 6-8 cm ernaast): ~1 cm diepte, ~6 mm opzij,
+    < 0,5 graden. Echte opname: herhaalbaar binnen ~6 mm en 0,7 graden.
+  - Staan de wielen anders gedraaid (kar verschoven), dan schuift het midden mee: tot ~3 cm
+    als alle vier dwars dezelfde kant op staan.
+  - Liggen er scanpunten in de rijbaan onder de kar (naar binnen gedraaid wiel, tape, iets
+    op de vloer), dan rijdt hij er niet in en meldt hij waar.
+  - Niets vlak naast de wielen laten staan (binnen ~15 cm): dat telt mee als wiel. Is een
+    wiel nauwelijks zichtbaar, dan meldt hij "geen voor- en achterwiel te onderscheiden".
+  - Meekijken: RViz/Foxglove, MarkerArray `/dock_cart/markers` (frame `odom`). Geel: de ROI;
+    oranje: midden van de punten per wiel; groen: de gemeten kar. Elke meting staat in
+    `~/.ros/dock_cart_<datum>_<tijd>.json` (om na te kijken).
+  - Resultaat in de log van `waypoint_tasks`. In de simulatie staat de kar vast op
+    (6,0; 6,6), zie route `kar_docken`. Los proberen:
+  ```bash
+  ros2 action send_goal /dock_cart my_bot_interfaces/action/WaypointTask \
+    '{params_json: "{\"x\": 6.0, \"y\": 6.6, \"yaw\": 0.0}"}' --feedback
+  ```
+  - Echte kar/robot: parameters van `waypoint_tasks` in `robot.launch.py`
+    (`dock_cart.cart_length`, `cart_width`, `search_margin`, `depth_offset`, `axle_x`,
+    `robot_half_width`, zie `WaypointTaskNode.py`). `depth_offset` één keer inmeten: staat
+    de robot na het docken X cm te kort voor het kar-midden, tel X/100 erbij op.
+  - Na het docken niet draaien onder de kar: zet (nog) geen waypoint na `dock_cart`.
 - Waypoints minstens ~0,6 m van muren; anders blijft de robot op "geblokkeerd" staan.
 - **Laat de pijl naar het volgende waypoint wijzen.** Anders draait de robot op het
   waypoint eerst om zijn as, en knippert hij even naar die kant.
@@ -120,9 +172,10 @@ Alle nodes starten mee met `sim.launch.py`, behalve de hmi_bridge (alleen `robot
 | Node | Doet | Belangrijkste topics |
 |---|---|---|
 | `route_manager` | routes laden/opslaan, concept-route | `get_route`, `route_draft/*`, `route_preview` |
-| `mission_manager` | route naar Nav2, missietoestand | `start_route`, `cancel_mission`, `mission_status` |
+| `mission_manager` | route naar Nav2, waypoint-acties, missietoestand | `start_route`, `cancel_mission`, `mission_status` |
 | `turn_detector` | komende bocht en draaien | `turn`, `turn_markers` (RViz/Foxglove) |
 | `signal_manager` | knipperlichten en buzzer | `indicators`, `buzzer_pattern` |
+| `waypoint_tasks` | eigen waypoint-acties als action servers (`dock_cart`) | `dock_cart`, `cmd_vel` |
 | `hmi_bridge` | MQTT naar de HMI | zie hieronder |
 
 **turn_detector:** kijkt `lookahead_m` (3 m) vooruit in `/plan`; een
@@ -135,7 +188,7 @@ een bocht **bij** een waypoint op tijd gemeld wordt. Logt elke verandering, bv.
 
 | Uitgang | Waarde | Wanneer |
 |---|---|---|
-| `/indicators` | `gevaar` | blokkade, `WAITING_OPERATOR`/`ERROR`, of tijdens het rijden een bron die wegvalt |
+| `/indicators` | `gevaar` | blokkade, koppelen aan de kar (`dock_cart`, vanaf 1,4 m voor de kar), `WAITING_OPERATOR`/`ERROR`, of tijdens het rijden een bron die wegvalt |
 | | `links` / `rechts` | onderweg: de komende bocht; binnen `at_turn_m` (0,5 m): de echte draairichting. Brandt `hold_s` (1 s) na |
 | | `uit` | anders |
 | `/buzzer_pattern` | `elke_5s` → `uit` | zolang de route geblokkeerd is |
@@ -152,6 +205,8 @@ die op de HMI werkte:
 | robot → HMI | `robot/patrol_state` | `idle`, `rijdend`, `wachten`, `voltooid`, `fout` |
 | HMI → robot | `robot/start` = `1` | `start_route` met `start_route_name` (leeg = niets) |
 | HMI → robot | `robot/stop` = `1` | `cancel_mission` |
+| HMI → robot | `robot/kar` = `1` | AMCL terug naar `initial_pose`, na 1 s route `kar_route_name` (`kaas`); genegeerd tijdens een missie |
+| HMI → robot | `robot/manual`, `robot/service` = `1` | EZ-Way-modus: `operating_mode_cmd` op `amr_manager/request` (antwoord in het log) |
 
 Alles gaat bij een verandering en elke `heartbeat_s` (1 s). `/hmi/mqtt_connected` is
 `false` als de broker langer dan 3 s weg is.
@@ -183,6 +238,29 @@ docker exec mqtt_test mosquitto_sub -v -t 'robot/#'              # alles zien
 docker exec mqtt_test mosquitto_pub -t robot/start -m 1   # startknop
 docker stop mqtt_test
 ```
+
+**Rolcontainer** (`models/rolcontainer`, nagebouwd naar de echte zorgkar: 0,845 m breed,
+0,70 m lang, open kant langs +x, statisch). `sim.launch.py` zet er één vast neer als `kar`
+op (6,0; 6,6) (`CART_POSE`). Zwenkwielen van 22 cm, 3 cm dik, draai-assen 0,62 x 0,70 m,
+3 cm naloop, met aan beide kanten een ijzeren beugel (boog over het wiel; op lidarhoogte
+alleen de uiteinden). Afgeleid uit lidarscans van de echte kar: de gesimuleerde lidar ziet
+dezelfde soort streep (wiel + puntjes van de beugel). Verschil: het ijzer en zwarte rubber
+weerkaatsen in het echt slecht (gaten, losse punten); Gazebo ziet alles. De bodem staat op
+korte poten: 0,33 m vrije hoogte (hoger dan de echte kar, zodat de gesimuleerde robot
+eronder past). De gaashekken (1,5 m) zijn niet nagemeten.
+Zet er één neer terwijl de simulatie draait (`-Y` = draaiing in rad):
+
+```bash
+ros2 run ros_gz_sim create -name kar1 -x 1.5 -y 0.15 -Y 1.57 \
+  -file /ros2_ws/install/my_bot/share/my_bot/models/rolcontainer/model.sdf
+```
+
+Elke kar een eigen `-name`. De lidar (op 0,165 m) ziet van de kar alleen de zwenkwielen
+en de uiteinden van de beugels. De wielen staan elk anders (20°, 160°, -15°, 35°); een
+andere stand (let op: een wiel ver naar binnen blokkeert de robot):
+`python3 maak_model.py 0 0 0 0 > model.sdf` (graden, kar-frame). Maten of kleuren
+aanpassen: in `models/rolcontainer/maak_model.py`, dan `python3 maak_model.py > model.sdf`
+en `my_bot` bouwen.
 
 ## 7. Kaart maken met SLAM
 
@@ -222,7 +300,7 @@ colcon test --packages-select hospital_robot_bt_nodes hospital_robot_navigation 
 colcon test-result --verbose
 
 cd /ros2_ws/src/navigatie_ezwheels
-for t in mission route turn signal hmi; do python3 -m unittest discover -s test -p "test_${t}*"; done
+for t in mission route turn signal hmi docking; do python3 -m unittest discover -s test -p "test_${t}*"; done
 ```
 
 `colcon test` op `my_bot` meldt stijlfouten (copyright-koppen, docstrings); die zeggen

@@ -7,6 +7,7 @@ Interface:
   sub  turn                (my_bot_interfaces/Turn)            TurnSource
   sub  mission_status      (std_msgs/String)                   RobotStateSource
   sub  navigation/blocked  (std_msgs/Bool, transient_local)    CollisionStateSource
+  sub  docking/active      (std_msgs/Bool, transient_local)    DockingStateSource
   pub  indicators          (std_msgs/String)  'links', 'rechts', 'gevaar' of 'uit', bij elke
        verandering; mqtt_hmi_bridge zet dit om naar de lampen
   pub  buzzer_pattern      (std_msgs/String)  buzzerpatroon van Horn: 'enkel', 'dubbel',
@@ -29,6 +30,7 @@ from signal_manager.RobotFacts import RobotFacts
 from signal_manager.actuators.Blinkers import Blinkers
 from signal_manager.actuators.Horn import Horn
 from signal_manager.sources.CollisionStateSource import CollisionStateSource
+from signal_manager.sources.DockingStateSource import DockingStateSource
 from signal_manager.sources.RobotStateSource import RobotStateSource
 from signal_manager.sources.TurnSource import TurnSource
 
@@ -45,7 +47,8 @@ class SignalManagerNode(Node):
         turn = TurnSource(turn_timeout_s, at_turn_m)
         state = RobotStateSource()
         collision = CollisionStateSource()
-        self.sources = [turn, state, collision]
+        docking = DockingStateSource()
+        self.sources = [turn, state, collision, docking]
         self.blinkers = Blinkers(hold_s)
         self.horn = Horn()
 
@@ -54,6 +57,9 @@ class SignalManagerNode(Node):
             String, 'mission_status', lambda m: state.update(m, self._now()), 10)
         self.create_subscription(
             Bool, 'navigation/blocked', lambda m: collision.update(m, self._now()),
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.create_subscription(
+            Bool, 'docking/active', lambda m: docking.update(m, self._now()),
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.indicator_pub = self.create_publisher(String, 'indicators', 10)
         self.buzzer_pub = self.create_publisher(String, 'buzzer_pattern', 10)

@@ -7,10 +7,11 @@ amcl:
     alpha4: 0.1
     alpha5: 0.1
     set_initial_pose: true
-    initial_pose_x: 0.0
-    initial_pose_y: 0.0
-    initial_pose_z: 0.0
-    initial_pose_yaw: 0.0
+    initial_pose:           # Iron-AMCL leest alleen deze geneste vorm, niet initial_pose_x
+      x: -2.449
+      y: -1.421
+      z: 0.0
+      yaw: 0.0
     base_frame_id: "base_link"
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9

@@ -21,6 +21,12 @@ ros2 launch hospital_robot_bringup robot.launch.py \
 
 Daarna: beginpositie zetten → route maken of kiezen → `start_route`.
 
+**Automatisch starten:** de robot start dit zelf bij het opstarten, via supervisor in de
+container (`~/.config/ez-way/supervisor/hospital-robot.conf`, log in
+`~/.local/ez-way/log/hospital-robot.log`). Handmatig starten zoals hierboven? Eerst
+`supervisorctl stop hospital-robot`, anders draait alles dubbel. Weer aan:
+`supervisorctl start hospital-robot`.
+
 ## 1. Voorwaarden
 
 | Onderdeel | Door | |

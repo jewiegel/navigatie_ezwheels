@@ -33,6 +33,7 @@ from launch_ros.actions import Node
 
 # Gazebo needs a few seconds before /clock, the lidar and /tf exist; earlier gives TF errors.
 NAV_START_DELAY_S = 8.0
+CART_POSE = (6.0, 6.6, 0.0)   # vaste plek van de kar (map = Gazebo-wereld), in de lege kamer
 
 
 def _include(package, launch_file, arguments):
@@ -97,5 +98,14 @@ def generate_launch_description():
             Node(
                 package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
                 output='screen', parameters=[{'use_sim_time': True}]),
+            Node(
+                package='my_bot', executable='WaypointTaskNode.py', name='waypoint_tasks',
+                output='screen', parameters=[{'use_sim_time': True}]),
+            # De kar staat altijd op dezelfde plek (zelfde pose als dock_cart in routes.yaml).
+            Node(
+                package='ros_gz_sim', executable='create', output='log',
+                arguments=['-name', 'kar', '-x', str(CART_POSE[0]), '-y', str(CART_POSE[1]),
+                           '-Y', str(CART_POSE[2]), '-file',
+                           os.path.join(my_bot, 'models', 'rolcontainer', 'model.sdf')]),
         ]),
     ])

@@ -93,6 +93,22 @@ def generate_launch_description():
             package='my_bot', executable='SignalManagerNode.py', name='signal_manager',
             output='screen'),
         Node(
+            package='my_bot', executable='WaypointTaskNode.py', name='waypoint_tasks',
+            output='screen',
+            # Maten van de echte kar en robot in meter. Uitleg: WaypointTaskNode.py.
+            parameters=[{
+                'dock_cart.cart_length': 0.70,   # buitenmaat kar in de rijrichting (ROI)
+                'dock_cart.cart_width': 0.845,   # buitenmaat kar dwars (ROI)
+                'dock_cart.search_margin': 0.25, # ROI tot zover buiten de kar (AMCL-fout)
+                # Lidar ziet alleen de voorkant van de wielen: zoveel verder ligt het echte
+                # midden. 0.055 = ingemeten in Gazebo (zelfde wielen). NAMETEN op de echte kar:
+                # na het docken: staat de robot X cm te kort, tel X/100 erbij op.
+                'dock_cart.depth_offset': 0.055,
+                'dock_cart.robot_half_width': 0.275,  # halve breedte robot (buitenkant wielen)
+                'dock_cart.drive_in_extra': 0.30, # m: base_link zoveel voorbij het kar-midden
+                'dock_cart.axle_x': 0.13,        # draaipunt robot (midden wielas) t.o.v. base_link
+            }]),
+        Node(
             package='my_bot', executable='HMIBridgeNode.py', name='hmi_bridge',
             output='screen',
             parameters=[{

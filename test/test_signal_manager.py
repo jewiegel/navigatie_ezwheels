@@ -14,6 +14,7 @@ from signal_manager.RobotFacts import (  # noqa: E402
 from signal_manager.actuators.Blinkers import Blinkers, BlinkerState  # noqa: E402
 from signal_manager.actuators.Horn import Horn, HornPattern  # noqa: E402
 from signal_manager.sources.CollisionStateSource import CollisionStateSource  # noqa: E402
+from signal_manager.sources.DockingStateSource import DockingStateSource  # noqa: E402
 from signal_manager.sources.RobotStateSource import RobotStateSource  # noqa: E402
 from signal_manager.sources.TurnSource import TurnSource  # noqa: E402
 
@@ -77,6 +78,12 @@ class TestSources(unittest.TestCase):
         source.apply(f)
         self.assertEqual(f.collision, CollisionAction.BLOCKED)
 
+    def test_docking(self):
+        source, f = DockingStateSource(), RobotFacts()
+        source.update(SimpleNamespace(data=True), 0.0)
+        source.apply(f)
+        self.assertTrue(f.docking)
+
 
 class TestBlinkers(unittest.TestCase):
 
@@ -101,6 +108,12 @@ class TestBlinkers(unittest.TestCase):
                          BlinkerState.HAZARD)
         self.assertEqual(self.state(0.1, mode=RobotMode.WAITING_OPERATOR), BlinkerState.HAZARD)
         self.assertEqual(self.state(0.2, safety_inputs_ok=False), BlinkerState.HAZARD)
+
+    def test_alarmlichten_tijdens_koppelen(self):
+        mode = RobotMode.EXECUTING_TASKS
+        self.assertEqual(self.state(0.0, mode=mode, docking=True, turn=LEFT), BlinkerState.HAZARD)
+        self.assertEqual(self.state(0.1, mode=mode), BlinkerState.LEFT)   # nabranden
+        self.assertEqual(self.state(1.5, mode=mode), BlinkerState.OFF)
 
     def test_niet_vers_buiten_rijden_geen_alarm(self):
         self.assertEqual(self.state(0.0, mode=RobotMode.IDLE, safety_inputs_ok=False),

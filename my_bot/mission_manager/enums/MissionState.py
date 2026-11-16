@@ -8,4 +8,5 @@ class MissionState(Enum):
     BLOCKED = 2
     WAITING_OPERATOR = 3
     ARRIVED = 4
+    EXECUTING_TASKS = 5
     ERROR = -1

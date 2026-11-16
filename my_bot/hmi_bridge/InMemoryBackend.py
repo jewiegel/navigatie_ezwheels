@@ -13,6 +13,7 @@ class InMemoryBackend(SignalBackend):
     def __init__(self):
         self.connected = False
         self.sent: list = []        # SignalCommand's
+        self.modes: list = []       # gevraagde EZ-Way-modi
         self._status: Optional[HMIStatus] = None
 
     def connect(self):
@@ -26,6 +27,9 @@ class InMemoryBackend(SignalBackend):
 
     def send(self, cmd: SignalCommand):
         self.sent.append(cmd)
+
+    def request_mode(self, mode: str):
+        self.modes.append(mode)
 
     def latest_status(self):
         return self._status

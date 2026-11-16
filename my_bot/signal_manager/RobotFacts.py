@@ -24,6 +24,7 @@ class RobotFacts:
     mode: RobotMode = RobotMode.IDLE
     collision: CollisionAction = CollisionAction.NONE
     turn: TurnDirection = TurnDirection.NONE
+    docking: bool = False            # koppelt aan de kar (dock_cart)
     safety_inputs_ok: bool = True    # alle sources vers
 
 

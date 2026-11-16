@@ -22,7 +22,8 @@ HAZARD_MODES = (RobotMode.WAITING_OPERATOR, RobotMode.ERROR)
 class Blinkers(Actuator):
     """Alarmlichten > bocht > uit.
 
-    Alarmlichten: route geblokkeerd, wachten op operator of fout, of tijdens het rijden een
+    Alarmlichten: route geblokkeerd, koppelen aan de kar, wachten op operator of fout, of
+    tijdens het rijden een
     source die niet vers is. Een bocht brandt hold_s na: vlak voor en na het draaien ziet de
     turn_detector soms even geen bocht, en het licht mag dan niet flikkeren.
     """
@@ -40,5 +41,6 @@ class Blinkers(Actuator):
             self._side = BlinkerState.OFF
 
         hazard = (facts.collision == CollisionAction.BLOCKED or facts.mode in HAZARD_MODES or
+                  facts.docking or
                   (facts.mode == RobotMode.DRIVING and not facts.safety_inputs_ok))
         self.state = BlinkerState.HAZARD if hazard else self._side

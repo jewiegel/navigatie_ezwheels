@@ -3,6 +3,7 @@ of MQTT.
 
 Draaien:  python3 -m unittest discover -s test -p "test_hmi*" -v   (vanuit navigatie_ezwheels/)
 """
+import json
 import os
 import sys
 import unittest
@@ -49,6 +50,14 @@ class TestPayloadCodec(unittest.TestCase):
         out = PayloadCodec.encode_command(SignalCommand(mission='DRIVING gang_a', blocked=True))
         self.assertEqual(out['robot/outputs/state_id'], b'1')
 
+    def test_modus_verzoek_volgens_ezway_api(self):
+        req = json.loads(PayloadCodec.encode_mode_request('SERVICE'))
+        self.assertEqual(req['cmd'], 'operating_mode_cmd')
+        self.assertEqual(req['cmd_params'], {'state': 'SERVICE'})
+        self.assertTrue(req['timestamp'].endswith('Z'))
+        self.assertNotEqual(req['requestId'],
+                            json.loads(PayloadCodec.encode_mode_request('SERVICE'))['requestId'])
+
     def test_batterij(self):
         self.assertNotIn('robot/outputs/batterij', PayloadCodec.encode_command(SignalCommand()))
         out = PayloadCodec.encode_command(SignalCommand(battery=87))
@@ -59,6 +68,10 @@ class TestPayloadCodec(unittest.TestCase):
                          HMIStatus(start=True))
         self.assertEqual(PayloadCodec.decode_status('robot/stop', b' 1\n'),
                          HMIStatus(stop=True))
+        self.assertEqual(PayloadCodec.decode_status('robot/kar', b'1'), HMIStatus(kar=True))
+        self.assertEqual(PayloadCodec.decode_status('robot/manual', b'1'), HMIStatus(mode='MANUAL'))
+        self.assertEqual(PayloadCodec.decode_status('robot/service', b'1'),
+                         HMIStatus(mode='SERVICE'))
         self.assertIsNone(PayloadCodec.decode_status('robot/start', b'0'))
         self.assertIsNone(PayloadCodec.decode_status('robot/iets', b'1'))
 

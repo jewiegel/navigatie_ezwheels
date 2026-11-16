@@ -6,6 +6,7 @@ import tempfile
 
 import yaml
 
+from ..ActionSpecification import ActionSpecification
 from ..Route import Route
 from ..Waypoint import Waypoint
 from .RouteRepository import RouteRepository
@@ -19,6 +20,12 @@ class YamlRouteRepository(RouteRepository):
             map_id: ziekenhuis
             waypoints:
               - {name: start, x: 3.19, y: 0.21, yaw: 0.0}   # m, m, rad in het map-frame
+              - name: balie
+                x: 5.0
+                y: 0.2
+                yaw: 0.0
+                actions:                       # optioneel, na aankomst in deze volgorde
+                  - {type: wait, params: {seconds: 3}, max_retries: 1}
 
     Het bestand wordt bij elke aanroep opnieuw gelezen, dus wijzigingen gelden
     zonder herstart. Ongeldige inhoud geeft ValueError met de route en het waypoint.
@@ -41,8 +48,7 @@ class YamlRouteRepository(RouteRepository):
         routes = self._read()
         routes[route.name] = {
             'map_id': route.map_id,
-            'waypoints': [
-                {'name': w.name, 'x': w.x, 'y': w.y, 'yaw': w.yaw} for w in route.waypoints],
+            'waypoints': [_dump_waypoint(w) for w in route.waypoints],
         }
         self._write(routes)
 
@@ -118,5 +124,31 @@ def _parse_route(name: str, entry) -> Route:
                 f'Route "{name}", waypoint {i}: moet x, y en yaw als getallen hebben') from None
         if not all(math.isfinite(v) for v in (x, y, yaw)):
             raise ValueError(f'Route "{name}", waypoint {i}: x, y en yaw moeten eindig zijn')
-        waypoints.append(Waypoint(str(wp.get('name', f'wp{i}')), x, y, yaw))
+        actions = _parse_actions(f'Route "{name}", waypoint {i}', wp.get('actions') or [])
+        waypoints.append(Waypoint(str(wp.get('name', f'wp{i}')), x, y, yaw, actions))
     return Route(name, str(entry.get('map_id', '')), waypoints)
+
+
+def _parse_actions(where: str, raw) -> list[ActionSpecification]:
+    if not isinstance(raw, list):
+        raise ValueError(f'{where}: actions moet een lijst zijn')
+    actions = []
+    for j, a in enumerate(raw, 1):
+        if not isinstance(a, dict) or not isinstance(a.get('type'), str) or not a['type']:
+            raise ValueError(f'{where}, actie {j}: moet een type hebben')
+        params = a.get('params') or {}
+        retries = a.get('max_retries', 1)
+        if not isinstance(params, dict):
+            raise ValueError(f'{where}, actie {j}: params moet een mapping zijn')
+        if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
+            raise ValueError(f'{where}, actie {j}: max_retries moet een geheel getal >= 0 zijn')
+        actions.append(ActionSpecification(a['type'], params, max_retries=retries))
+    return actions
+
+
+def _dump_waypoint(w: Waypoint) -> dict:
+    entry = {'name': w.name, 'x': w.x, 'y': w.y, 'yaw': w.yaw}
+    if w.actions:
+        entry['actions'] = [
+            {'type': a.type, 'params': a.params, 'max_retries': a.max_retries} for a in w.actions]
+    return entry
