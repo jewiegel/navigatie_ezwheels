@@ -60,9 +60,13 @@ def generate_launch_description():
             default_value='/ros2_ws/src/navigatie_ezwheels/config/routes.yaml',
             description='Routes file of the route_manager (read and written)'),
         DeclareLaunchArgument(
+            'world', default_value='ziekenhuis_merged.sdf',
+            description='Wereld in my_bot/worlds, bv. hospital_aws.sdf (AWS-ziekenhuis) of hospital_aws_people.sdf (met lopende mensen)'),
+        DeclareLaunchArgument(
             'foxglove', default_value='true', description='Start foxglove_bridge on port 8765'),
 
-        _include('my_bot', 'launch_sim.launch.py', {}),
+        # x/y/yaw (startpose) komen als globale launch-argumenten door naar launch_sim.
+        _include('my_bot', 'launch_sim.launch.py', {'world': LaunchConfiguration('world')}),
 
         Node(
             package='rviz2', executable='rviz2', output='log',

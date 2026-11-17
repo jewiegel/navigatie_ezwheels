@@ -3,10 +3,34 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+import xml.etree.ElementTree as ET
+
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable, SetEnvironmentVariable, OpaqueFunction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 from launch_ros.actions import Node
+
+# Vrije plek in de gang van het AWS-ziekenhuis, robot kijkt naar -y (zuid).
+HOSPITAL_START_POSE = {'x': '-0.01', 'y': '12.47', 'yaw': '-1.55'}
+
+def walking_people(context):
+    """Bridge + WalkingPeopleNode voor elke actor in de wereld (geen actors: niets)."""
+    world_file = os.path.join(get_package_share_directory('my_bot'), 'worlds',
+                              context.launch_configurations['world'])
+    names = [a.get('name') for a in ET.parse(world_file).getroot().iter('actor')]
+    if not names:
+        return []
+    topics = [arg for n in names for arg in (
+        f'/model/{n}_lichaam/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry',
+        f'/model/{n}_lichaam/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist')]
+    return [
+        Node(package='ros_gz_bridge', executable='parameter_bridge', name='people_bridge',
+             arguments=topics, output='log'),
+        Node(package='my_bot', executable='WalkingPeopleNode.py', name='walking_people',
+             output='screen', parameters=[{'world_file': world_file, 'use_sim_time': True}]),
+    ]
+
 
 def generate_launch_description():
 
@@ -24,8 +48,8 @@ def generate_launch_description():
     gazebo = IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([os.path.join(
                     get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')]),
-                    launch_arguments={'gz_args': '-r ' + os.path.join(
-                    get_package_share_directory('my_bot'), 'worlds', 'ziekenhuis_merged.sdf')
+                    launch_arguments={'gz_args': ['-r ', PathJoinSubstitution([
+                    get_package_share_directory('my_bot'), 'worlds', LaunchConfiguration('world')])]
                 }.items(),
              )
     
@@ -39,7 +63,9 @@ def generate_launch_description():
 
     # De spawner node (Aangepast van spawn_entity.py naar create)
     spawn_entity = Node(package='ros_gz_sim', executable='create',
-                        arguments=['-topic', 'robot_description'],
+                        arguments=['-topic', 'robot_description',
+                                   '-x', LaunchConfiguration('x'), '-y', LaunchConfiguration('y'),
+                                   '-Y', LaunchConfiguration('yaw')],
                         output='screen')
     
     joint_state_publisher = Node(
@@ -67,10 +93,22 @@ def generate_launch_description():
 
     # Alles lanceren
     return LaunchDescription([
+        DeclareLaunchArgument('world', default_value='ziekenhuis_merged.sdf',
+                              description='Wereldbestand in my_bot/worlds'),
+        # Startpose per wereld; overschrijfbaar met x:= y:= yaw:=.
+        *[DeclareLaunchArgument(arg, default_value=PythonExpression([
+            "'", hospital, "' if '", LaunchConfiguration('world'), "'.startswith('hospital_aws') else '0.0'"]))
+          for arg, hospital in HOSPITAL_START_POSE.items()],
+        # Meshes van de AWS-ziekenhuiswereld (git clone naast dit pakket); de meubels komen van Gazebo Fuel.
+        AppendEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH',
+                               '/ros2_ws/src/aws-robomaker-hospital-world/models'),
+        # Fuel-cache in de gemounte workspace, anders downloadt elke nieuwe container ~56 MB opnieuw.
+        SetEnvironmentVariable('IGN_FUEL_CACHE_PATH', '/ros2_ws/fuel_cache'),
         rsp,
         gazebo,
         twist_mux,
         spawn_entity,
         bridge,
-        joint_state_publisher
+        joint_state_publisher,
+        OpaqueFunction(function=walking_people),
     ])

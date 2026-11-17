@@ -44,6 +44,7 @@ install(PROGRAMS
   my_bot/nodes/SignalManagerNode.py
   my_bot/nodes/HMIBridgeNode.py
   my_bot/nodes/WaypointTaskNode.py
+  my_bot/nodes/WalkingPeopleNode.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
