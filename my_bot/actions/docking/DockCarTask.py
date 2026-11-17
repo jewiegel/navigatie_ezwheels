@@ -18,10 +18,10 @@ from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from docking import (
+from . import (
     axis_cmd, compose, inverse, measure_cart, point_cmd, points_in_lane, rotate_cmd,
     stable_points, transform)
-from .WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
+from ..WaypointTaskServerBase import TaskResult, WaypointTaskServerBase
 
 APPROACH_M = 1.4          # Nav2 brengt het midden van de robot zover voor het kar-midden
 STAGE_M = 1.0             # daar precies op de as uitlijnen, dan recht naar binnen

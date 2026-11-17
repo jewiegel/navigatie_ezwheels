@@ -1,30 +1,26 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import Optional
+import queue
 
 import paho.mqtt.client as mqtt
 
-from hmi_bridge.HMIMessages import HMIStatus, SignalCommand
-from hmi_bridge.PayloadCodec import (TOPIC_AMR_REQUEST, TOPIC_AMR_RESULT, TOPIC_KAR,
-                                     TOPIC_MANUAL, TOPIC_SERVICE, TOPIC_START, TOPIC_STOP,
-                                     PayloadCodec)
-from hmi_bridge.SignalBackend import SignalBackend
 
+class MqttBackend:
+    """MQTT-verbinding: verbindt op de achtergrond en opnieuw na een onderbreking (paho
+    loop-thread). Ontvangen berichten wachten in een rij tot receive() (ROS-thread)."""
 
-class MqttBackend(SignalBackend):
-    """Verbindt op de achtergrond en opnieuw na een onderbreking (paho loop-thread)."""
-
-    def __init__(self, host: str, port: int, logger=None):
-        self.host, self.port = host, port
+    def __init__(self, host: str, port: int, topics, logger=None):
+        self.host, self.port, self.topics = host, port, list(topics)
         self.log = logger or logging.getLogger('hmi_bridge')
-        self._status: Optional[HMIStatus] = None
+        self._inbox = queue.SimpleQueue()
         # paho 2.x wil een callback-API-versie; VERSION1 = dezelfde callbacks als paho 1.x
         kwargs = ({'callback_api_version': mqtt.CallbackAPIVersion.VERSION1}
                   if hasattr(mqtt, 'CallbackAPIVersion') else {})
         self._client = mqtt.Client(client_id='hmi_bridge', **kwargs)
         self._client.on_connect = self._on_connect
-        self._client.on_message = self._on_message
+        self._client.on_message = lambda client, userdata, msg: self._inbox.put(
+            (msg.topic, msg.payload))
 
     def connect(self):
         self._client.connect_async(self.host, self.port, keepalive=10)
@@ -34,36 +30,23 @@ class MqttBackend(SignalBackend):
         self._client.disconnect()
         self._client.loop_stop()
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self._client.is_connected()
 
-    def send(self, cmd: SignalCommand):
-        for topic, payload in PayloadCodec.encode_command(cmd).items():
-            self._client.publish(topic, payload)
+    def publish(self, topic: str, payload: bytes):
+        self._client.publish(topic, payload)
 
-    def request_mode(self, mode: str):
-        self._client.publish(TOPIC_AMR_REQUEST, PayloadCodec.encode_mode_request(mode))
-
-    def latest_status(self):
-        return self._status
+    def receive(self):
+        """Alle (topic, payload) die sinds de vorige keer binnen zijn."""
+        out = []
+        while not self._inbox.empty():
+            out.append(self._inbox.get())
+        return out
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc != 0:
             self.log.error(f'MQTT-verbinding geweigerd (rc={rc})')
             return
         self.log.info(f'MQTT verbonden met {self.host}:{self.port}')
-        for topic in (TOPIC_START, TOPIC_STOP, TOPIC_KAR, TOPIC_MANUAL, TOPIC_SERVICE,
-                      TOPIC_AMR_RESULT):    # opnieuw na elke (her)verbinding
+        for topic in self.topics:     # opnieuw na elke (her)verbinding
             client.subscribe(topic)
-
-    def _on_message(self, client, userdata, msg):
-        if msg.topic == TOPIC_AMR_RESULT:   # antwoord van EZ-Way (ook op andere verzoeken)
-            self.log.info(f'EZ-Way antwoord: {msg.payload.decode(errors="replace")}')
-            return
-        self.log.info(f'HMI-bericht ontvangen: {msg.topic} = {msg.payload!r}')
-        status = PayloadCodec.decode_status(msg.topic, msg.payload)
-        if status is None:
-            if msg.payload.strip() != b'0':     # "0" (knop los) is normaal
-                self.log.warning(f'HMI-bericht genegeerd: {msg.topic} = {msg.payload!r}')
-        else:
-            self._status = status

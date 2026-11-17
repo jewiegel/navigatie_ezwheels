@@ -1,235 +1,148 @@
 #!/usr/bin/env python3
-"""HMIBridgeNode: koppeling tussen ROS en de HMI (FT2J) via een SignalBackend (MQTT).
+"""HMIBridgeNode: koppeling tussen ROS en de HMI (FT2J) via MQTT.
 
-Gebruikt dezelfde MQTT-topics als de oude mqtt_hmi_bridge (zie hmi_bridge/PayloadCodec.py):
-lampen en buzzer als "1"/"0", de status als tekst, start/stop-knoppen als "1".
-Robot -> HMI gaat bij elke verandering en elke heartbeat_s (hartslag).
+Alles wat over MQTT gaat zit in een eigen klasse:
+  hmi_bridge/inputs/   MqttInput:  één MQTT-topic -> iets in ROS (knoppen, EZ-Way-antwoord)
+  hmi_bridge/outputs/  MqttOutput: iets uit ROS -> MQTT-topics (lampen, buzzer, status, batterij)
+Elke klasse maakt in setup(ctx) zijn eigen ROS-subscriptions/clients en parameters (ctx = deze
+node). Iets nieuws over MQTT = een nieuwe klasse en die hieronder in INPUTS of OUTPUTS zetten.
 
-Interface:
-  sub  indicators      (std_msgs/String)  knipperlichten van de signal_manager; de bridge
-       laat de lampen knipperen (blink_period_s)
-  sub  buzzer_pattern  (std_msgs/String)  buzzerpatroon van de signal_manager; de bridge
-       speelt het af op de aan/uit-uitgang (BuzzerPlayer)
-  sub  mission_status  (std_msgs/String)  missietoestand van de MissionManager
-  sub  navigation/blocked  (std_msgs/Bool, transient_local)  blokkade van de BT (zelfde
-       signaal als het elke-5s-piepen van de signal_manager) -> robot/outputs/state_id
-  sub  battery_state   (sensor_msgs/BatteryState)  -> robot/outputs/batterij als 0-100: uit de
-       spanning als battery_empty_v/battery_full_v gezet zijn, anders uit percentage (0-1)
-       als heel getal 0-100; remap naar het topic van de batterijdriver
+De node zelf: MQTT-verbinding, berichten naar de juiste input, uitgangen versturen bij elke
+verandering en alles opnieuw elke heartbeat_s (hartslag), en de verbinding bewaken.
+
+Topics (zelfde als de oude mqtt_hmi_bridge; uitgangen en knoppen zijn "1"/"0"):
+  robot -> HMI  robot/outputs/lamp_links, lamp_rechts   LampsOutput    (indicators)
+                robot/outputs/buzzer                    BuzzerOutput   (buzzer_pattern)
+                robot/patrol_state, outputs/state_id    StateOutput    (mission_status,
+                                                                        navigation/blocked)
+                robot/outputs/batterij                  BatteryOutput  (battery_state)
+  HMI -> robot  robot/start                             StartButtonInput  (start_route)
+                robot/stop                              StopButtonInput   (cancel_mission)
+                robot/kar                               KarButtonInput    (initialpose, start_route)
+                robot/manual, robot/service             ModeInput -> EZ-Way amr_manager/request
+  EZ-Way        amr_manager/result                      EzWayResultInput  (alleen loggen)
+
+ROS:
   pub  hmi/mqtt_connected  (std_msgs/Bool, transient_local)  false als de MQTT-verbinding
        langer dan mqtt_timeout_s weg is (CommandWatchDog), bij elke verandering
-  cli  start_route     (my_bot_interfaces/StartRoute)  startknop -> route start_route_name
-  cli  cancel_mission  (std_srvs/Trigger)              stopknop
-  pub  initialpose     (geometry_msgs/PoseWithCovarianceStamped)  karknop: AMCL terug naar
-       zijn ingestelde startpositie (parameters initial_pose.* van /amcl), daarna route
-       kar_route_name; alleen als er geen missie loopt (IDLE of ARRIVED)
-  MQTT robot/manual, robot/service  -> EZ-Way operating_mode_cmd (amr_manager/request)
 
-Parameters:
-  backend           'mqtt', of 'memory' zonder broker (tests, simulatie)   (mqtt)
+Parameters (van de node; de inputs/outputs hebben er ook, zie hun klasse):
   broker_host       MQTT-broker                                           (localhost)
   broker_port                                                             (1883)
   heartbeat_s       uitgangen opnieuw sturen als er niets verandert        (1.0)
-  blink_period_s    knipperen: helft aan, helft uit                       (1.0)
   mqtt_timeout_s    zo lang zonder MQTT-verbinding = weg                   (3.0)
-  battery_empty_v   spanning bij 0 % (0 = percentage van de driver)       (0.0)
-  battery_full_v    spanning bij 100 %                                    (0.0)
-  start_route_name  route voor de startknop; leeg = startknop doet niets  ('')
-  kar_route_name    route voor de karknop (robot/kar)                     ('kaas')
+  blink_period_s    LampsOutput: knipperen, helft aan, helft uit           (1.0)
+  battery_empty_v   BatteryOutput: spanning bij 0 % (0 = percentage driver) (21.0)
+  battery_full_v    BatteryOutput: spanning bij 100 %                     (28.0)
+  start_route_name  StartButtonInput: leeg = startknop doet niets         ('')
+  kar_route_name    KarButtonInput                                        ('kaas')
 """
-import math
-
 import rclpy
 from rclpy.executors import ExternalShutdownException
-from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
-from rclpy.parameter import parameter_value_to_python
-from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import DurabilityPolicy, QoSProfile
-from sensor_msgs.msg import BatteryState
-from std_msgs.msg import Bool, String
-from std_srvs.srv import Trigger
+from std_msgs.msg import Bool
 
-from hmi_bridge.BuzzerPlayer import BuzzerPlayer
 from hmi_bridge.CommandWatchDog import CommandWatchDog
-from hmi_bridge.HMIMessages import SignalCommand
-from hmi_bridge.InMemoryBackend import InMemoryBackend
-from hmi_bridge.SignalBackend import SignalBackend
-from my_bot_interfaces.srv import StartRoute
+from hmi_bridge.inputs.EzWayResultInput import EzWayResultInput
+from hmi_bridge.inputs.KarButtonInput import KarButtonInput
+from hmi_bridge.inputs.ModeInput import ModeInput
+from hmi_bridge.inputs.StartButtonInput import StartButtonInput
+from hmi_bridge.inputs.StopButtonInput import StopButtonInput
+from hmi_bridge.outputs.BatteryOutput import BatteryOutput
+from hmi_bridge.outputs.BuzzerOutput import BuzzerOutput
+from hmi_bridge.outputs.LampsOutput import LampsOutput
+from hmi_bridge.outputs.StateOutput import StateOutput
+
+
+def make_inputs():
+    return [StartButtonInput(), StopButtonInput(), KarButtonInput(),
+            ModeInput('robot/manual', 'MANUAL'), ModeInput('robot/service', 'SERVICE'),
+            EzWayResultInput()]
+
+
+def make_outputs():
+    return [LampsOutput(), BuzzerOutput(), StateOutput(), BatteryOutput()]
 
 
 class HMIBridgeNode(Node):
 
     def __init__(self):
         super().__init__('hmi_bridge')
-        backend = self.declare_parameter('backend', 'mqtt').value
         host = self.declare_parameter('broker_host', 'localhost').value
         port = self.declare_parameter('broker_port', 1883).value
         self.heartbeat_s = self.declare_parameter('heartbeat_s', 1.0).value
-        self.blink_period_s = self.declare_parameter('blink_period_s', 1.0).value
-        mqtt_timeout_s = self.declare_parameter('mqtt_timeout_s', 3.0).value
-        self.start_route_name = self.declare_parameter('start_route_name', '').value
-        self.kar_route_name = self.declare_parameter('kar_route_name', 'kaas').value
-        self.battery_empty_v = self.declare_parameter('battery_empty_v', 21.0).value
-        self.battery_full_v = self.declare_parameter('battery_full_v', 28.0).value
+        self.watchdog = CommandWatchDog(self.declare_parameter('mqtt_timeout_s', 3.0).value)
 
-        if backend == 'memory':
-            self.backend: SignalBackend = InMemoryBackend()
-        else:
-            from hmi_bridge.MqttBackend import MqttBackend   # paho alleen nodig voor MQTT
-            self.backend = MqttBackend(host, port, self.get_logger())
-        self.watchdog = CommandWatchDog(mqtt_timeout_s)
-        self.buzzer = BuzzerPlayer()
+        self.inputs = {i.topic: i for i in make_inputs()}
+        self.outputs = make_outputs()
+        for part in (*self.inputs.values(), *self.outputs):
+            part.setup(self)
 
-        self._blinkers = 'uit'
-        self._blink_since = 0.0         # begin van het huidige knipperlicht: start met aan
-        self._mission = ''
-        self._blocked = False
-        self._battery = None            # procent 0-100, None = nog geen (geldige) meting
-        self._sent_command = None       # laatst verstuurde SignalCommand
-        self._sent_time = None
-        self._status = None             # laatst verwerkte knopdruk
+        self._sent = {}                 # topic -> laatst verstuurde payload
+        self._sent_time = None          # laatste hartslag
         self._connected = None          # laatst gepubliceerde hmi/mqtt_connected
-
-        self.create_subscription(String, 'indicators', self.on_indicators, 10)
-        self.create_subscription(String, 'buzzer_pattern', self.on_buzzer, 10)
-        self.create_subscription(String, 'mission_status', self.on_mission, 10)
-        self.create_subscription(BatteryState, 'battery_state', self.on_battery, 10)
-        self.create_subscription(
-            Bool, 'navigation/blocked', self.on_blocked,
-            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.connected_pub = self.create_publisher(
             Bool, 'hmi/mqtt_connected',
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
-        self.start_client = self.create_client(StartRoute, 'start_route')
-        self.cancel_client = self.create_client(Trigger, 'cancel_mission')
-        self.initialpose_pub = self.create_publisher(PoseWithCovarianceStamped, 'initialpose', 10)
-        self.amcl_params = AsyncParameterClient(self, 'amcl')
-        self._kar_timer = None
 
-        self.backend.connect()
+        from hmi_bridge.MqttBackend import MqttBackend   # paho alleen nodig voor MQTT
+        self.mqtt = MqttBackend(host, port, self.inputs, self.get_logger())
+        self.mqtt.connect()
         self.create_timer(0.05, self.update)    # 50 ms: fijn genoeg voor de buzzerpatronen
-        self.get_logger().info(f'HMI-bridge gestart ({backend}: {host}:{port})')
+        self.get_logger().info(f'HMI-bridge gestart (MQTT {host}:{port})')
 
-    # ── ROS -> HMI ───────────────────────────────────────────────────────────
+    # ── voor de inputs en outputs (ctx) ──────────────────────────────────────
 
-    def on_indicators(self, msg: String):
-        if msg.data != self._blinkers:
-            self._blinkers, self._blink_since = msg.data, self._now()
+    def now(self) -> float:
+        return self.get_clock().now().nanoseconds / 1e9
 
-    def on_buzzer(self, msg: String):
-        try:
-            self.buzzer.play(msg.data, self._now())
-        except ValueError as e:
-            self.get_logger().warn(f'Buzzer: {e}')
+    def mqtt_publish(self, topic: str, payload: bytes):
+        self.mqtt.publish(topic, payload)
 
-    def on_mission(self, msg: String):
-        self._mission = msg.data
-
-    def on_blocked(self, msg: Bool):
-        self._blocked = msg.data
-
-    def on_battery(self, msg: BatteryState):
-        if self.battery_full_v > self.battery_empty_v > 0:
-            # shortcut: lineair tussen leeg en vol; de echte ontlaadcurve is dat niet, gebruik
-            # een tabel als het percentage te veel verspringt
-            p = (msg.voltage - self.battery_empty_v) / (self.battery_full_v - self.battery_empty_v)
-        else:
-            p = msg.percentage      # 0-1, NaN als de driver het niet weet
-        self._battery = None if math.isnan(p) else round(min(max(p, 0.0), 1.0) * 100)
-
-    def update(self):
-        now = self._now()
-        blink_on = (now - self._blink_since) % self.blink_period_s < self.blink_period_s / 2
-        command = SignalCommand(self._blinkers, blink_on, self.buzzer.is_on(now), self._mission,
-                                self._battery, self._blocked)
-        if self.backend.is_connected() and (
-                command != self._sent_command or self._sent_time is None or
-                now - self._sent_time >= self.heartbeat_s):
-            self.backend.send(command)
-            self._sent_command, self._sent_time = command, now
-
-        status = self.backend.latest_status()
-        if status is not None and status is not self._status:
-            self._status = status
-            self._handle_button(status)
-
-        if self.backend.is_connected():
-            self.watchdog.feed(now)
-        connected = not self.watchdog.expired(now)
-        if connected != self._connected:
-            self._connected = connected
-            self.connected_pub.publish(Bool(data=connected))
-            # Twee aparte aanroepen: rclpy staat geen wisselend niveau op één logregel toe.
-            if connected:
-                self.get_logger().info('MQTT-verbinding met de HMI-broker in orde')
-            else:
-                self.get_logger().warn('Geen MQTT-verbinding met de HMI-broker')
-
-    # ── HMI -> ROS ───────────────────────────────────────────────────────────
-
-    def _handle_button(self, status):
-        if status.stop:
-            self.get_logger().info('HMI: stopknop')
-            self._call(self.cancel_client, Trigger.Request())
-        if status.start:
-            if not self.start_route_name:
-                self.get_logger().warn('HMI: startknop, maar start_route_name is leeg')
-                return
-            self.get_logger().info(f'HMI: startknop -> route "{self.start_route_name}"')
-            self._call(self.start_client, StartRoute.Request(route_name=self.start_route_name))
-        if status.mode:
-            self.get_logger().info(f'HMI: modusknop -> EZ-Way {status.mode}')
-            self.backend.request_mode(status.mode)
-        if status.kar:
-            state = self._mission.split(' ', 1)[0]
-            if state not in ('', 'IDLE', 'ARRIVED'):
-                self.get_logger().warn(f'HMI: karknop genegeerd, missie loopt ({self._mission})')
-                return
-            if not self.amcl_params.services_are_ready():
-                self.get_logger().error('HMI: karknop, maar /amcl is niet bereikbaar')
-                return
-            self.get_logger().info(
-                f'HMI: karknop -> startpositie terug, dan route "{self.kar_route_name}"')
-            self.amcl_params.get_parameters(
-                ['initial_pose.x', 'initial_pose.y', 'initial_pose.yaw'], self._reset_pose)
-
-    def _reset_pose(self, future):
-        try:
-            x, y, yaw = (float(parameter_value_to_python(v)) for v in future.result().values)
-        except (TypeError, ValueError):    # parameter ontbreekt (NOT_SET) of niet numeriek
-            self.get_logger().error('Karknop: initial_pose.* van /amcl niet te lezen')
-            return
-        msg = PoseWithCovarianceStamped()
-        msg.header.frame_id = 'map'
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.pose.pose.position.x, msg.pose.pose.position.y = x, y
-        msg.pose.pose.orientation.z = math.sin(yaw / 2)
-        msg.pose.pose.orientation.w = math.cos(yaw / 2)
-        msg.pose.covariance[0] = msg.pose.covariance[7] = 0.25  # zoals RViz' 2D Pose Estimate
-        msg.pose.covariance[35] = 0.0685
-        self.initialpose_pub.publish(msg)
-        self.get_logger().info(f'Startpositie teruggezet: x={x:.3f} y={y:.3f} yaw={yaw:.3f}')
-        # AMCL zet map->odom pas bij de volgende scans om; wacht even zodat Nav2 vanaf de
-        # nieuwe positie plant
-        self._kar_timer = self.create_timer(1.0, self._start_kar_route)
-
-    def _start_kar_route(self):
-        self.destroy_timer(self._kar_timer)
-        self._call(self.start_client, StartRoute.Request(route_name=self.kar_route_name))
-
-    def _call(self, client, request):
+    def call(self, client, request):
+        """Service aanroepen zonder te wachten; het antwoord komt in het log."""
         if not client.service_is_ready():
             self.get_logger().error(f'Service {client.srv_name} niet beschikbaar')
             return
         client.call_async(request).add_done_callback(
             lambda f: self.get_logger().info(f'{client.srv_name}: {f.result().message}'))
 
-    def _now(self) -> float:
-        return self.get_clock().now().nanoseconds / 1e9
+    # ── lus ──────────────────────────────────────────────────────────────────
+
+    def update(self):
+        now = self.now()
+        for topic, payload in self.mqtt.receive():
+            self.get_logger().debug(f'MQTT ontvangen: {topic} = {payload!r}')
+            try:
+                self.inputs[topic].on_message(payload)
+            except Exception as e:      # een raar bericht van buiten mag de bridge niet stoppen
+                self.get_logger().error(f'MQTT-bericht {topic} = {payload!r}: {e!r}')
+
+        connected = self.mqtt.is_connected()
+        if connected:
+            heartbeat = self._sent_time is None or now - self._sent_time >= self.heartbeat_s
+            for output in self.outputs:
+                for topic, payload in output.payloads(now).items():
+                    if heartbeat or self._sent.get(topic) != payload:
+                        self.mqtt.publish(topic, payload)
+                        self._sent[topic] = payload
+            if heartbeat:
+                self._sent_time = now
+            self.watchdog.feed(now)
+
+        alive = not self.watchdog.expired(now)
+        if alive != self._connected:
+            self._connected = alive
+            self.connected_pub.publish(Bool(data=alive))
+            # Twee aparte aanroepen: rclpy staat geen wisselend niveau op één logregel toe.
+            if alive:
+                self.get_logger().info('MQTT-verbinding met de HMI-broker in orde')
+            else:
+                self.get_logger().warn('Geen MQTT-verbinding met de HMI-broker')
 
     def destroy_node(self):
-        self.backend.disconnect()
+        self.mqtt.disconnect()
         super().destroy_node()
 
 
