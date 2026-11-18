@@ -17,8 +17,8 @@ Real robot: hospital navigation stack without Gazebo and RViz.
 
 Starts AMCL on the given map, Nav2 with the hospital behavior trees
 (navigation.launch.py, config/nav2_params_robot.yaml), the route_manager, the
-MissionManagerNode, the turn_detector, the signal_manager and optionally the HMI bridge
-and the foxglove_bridge.
+MissionManagerNode, the turn_detector, the signal_manager and optionally the HMI bridge,
+the foxglove_bridge and the person detector (DR-SPAAM, needs the mijn_ros2_iron image).
 
 Expects the robot platform (EZ-Wheel / EZ-Way) to provide the hardware side:
 lidar on /laser_1/scan_filtered, /odom, TF odom -> base_link -> laser_1 and
@@ -69,6 +69,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'hmi_start_route', default_value='bruh',
             description='Route started by the HMI start button (empty: button does nothing)'),
+        DeclareLaunchArgument(
+            'person_detector', default_value='false',
+            description='Persoonsdetectie (DR-SPAAM) op de lidar; publiceert /person_detections'),
 
         _include('my_bot', 'localization_launch.py', {
             'map': LaunchConfiguration('map'),
@@ -116,6 +119,11 @@ def generate_launch_description():
                 'start_route_name': LaunchConfiguration('hmi_start_route'),
             }],
             condition=IfCondition(LaunchConfiguration('hmi'))),
+        Node(
+            # Alleen kijken: nog niets in Nav2 gebruikt /person_detections. Stride 2 (default).
+            package='my_bot', executable='PersonDetectorNode.py', name='person_detector',
+            output='screen', remappings=[('scan', '/laser_1/scan_filtered')],
+            condition=IfCondition(LaunchConfiguration('person_detector'))),
         Node(
             package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
             output='log', parameters=[{'port': 8765}],

@@ -10,6 +10,8 @@ Start Nav2 met de behavior tree van de ziekenhuisrobot.
   `nav2_params_robot.yaml`, verplicht argument `map:=`, optioneel `foxglove:=false`.
   Verwacht dat de robotsoftware lidar (`/laser_1/scan_filtered`), `/odom`, TF en
   de wieldriver levert. Zie `StartenSImulatie.md` §8.
+  Persoonsdetectie: `person_detector:=true` (standaard uit; alleen kijken in Foxglove/RViz
+  op `/person_markers`). Zonder de Docker-image eerst eenmalig `scripts/install_dr_spaam.sh`.
 - `launch/navigation.launch.py` — vult de boom-sjablonen in, past de
   Nav2-parameters aan en start `my_bot/launch/navigation_launch.py`.
 - `hospital_robot_bringup/bt_template.py` — de functies daarvoor (ook gebruikt in de test).
