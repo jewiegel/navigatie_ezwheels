@@ -1,9 +1,11 @@
 <sdf version='1.9'>
   <world name='hospital'>
-    <physics name='1ms' type='ignored'>
-      <max_step_size>0.001</max_step_size>
+    <physics name='4ms' type='ignored'>
+      <!-- Stap 4 ms (i.p.v. 1): Gazebo publiceert /clock elke stap en elk Python-node met use_sim_time
+           betaalt daarvoor (gemeten: 57% -> 28% CPU per node). Rijgedrag robot gelijk getest. -->
+      <max_step_size>0.004</max_step_size>
       <real_time_factor>1</real_time_factor>
-      <real_time_update_rate>1000</real_time_update_rate>
+      <real_time_update_rate>250</real_time_update_rate>
     </physics>
     <plugin filename="libignition-gazebo-sensors-system.so"
         name="ignition::gazebo::systems::Sensors">

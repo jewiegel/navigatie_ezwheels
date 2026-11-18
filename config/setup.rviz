@@ -307,6 +307,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /turn_markers
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Personen
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /person_markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

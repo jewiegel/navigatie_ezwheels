@@ -1,10 +1,10 @@
+import importlib.util
 import os
 
-from ament_index_python.packages import get_package_share_directory
+import yaml
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 
 from launch import LaunchDescription
-import xml.etree.ElementTree as ET
-
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, AppendEnvironmentVariable, SetEnvironmentVariable, OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -15,20 +15,30 @@ from launch_ros.actions import Node
 HOSPITAL_START_POSE = {'x': '-0.01', 'y': '12.47', 'yaw': '-1.55'}
 
 def walking_people(context):
-    """Bridge + WalkingPeopleNode voor elke actor in de wereld (geen actors: niets)."""
-    world_file = os.path.join(get_package_share_directory('my_bot'), 'worlds',
-                              context.launch_configurations['world'])
-    names = [a.get('name') for a in ET.parse(world_file).getroot().iter('actor')]
-    if not names:
+    """people:=true: paspoppen uit people_file spawnen, met bridge en WalkingPeopleNode."""
+    if context.launch_configurations['people'].lower() != 'true':
         return []
-    topics = [arg for n in names for arg in (
-        f'/model/{n}_lichaam/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry',
-        f'/model/{n}_lichaam/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist')]
-    return [
+    # Modellen en hun startplek komen uit het node zelf, zodat ze op één plek gedefinieerd zijn.
+    spec = importlib.util.spec_from_file_location('walking_people', os.path.join(
+        get_package_prefix('my_bot'), 'lib', 'my_bot', 'WalkingPeopleNode.py'))
+    walking = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(walking)
+    people_file = context.launch_configurations['people_file']
+    with open(people_file) as f:
+        models = walking.models(yaml.safe_load(f))
+    share = get_package_share_directory('my_bot')
+    spawn = [Node(package='ros_gz_sim', executable='create', output='log',
+                  arguments=['-name', name, '-x', str(x), '-y', str(y),
+                             '-file', os.path.join(share, 'models', model_dir, 'model.sdf')])
+             for name, (model_dir, x, y) in models.items()]
+    topics = [arg for n in models for arg in (
+        f'/model/{n}/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry',
+        f'/model/{n}/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist')]
+    return spawn + [
         Node(package='ros_gz_bridge', executable='parameter_bridge', name='people_bridge',
              arguments=topics, output='log'),
         Node(package='my_bot', executable='WalkingPeopleNode.py', name='walking_people',
-             output='screen', parameters=[{'world_file': world_file, 'use_sim_time': True}]),
+             output='screen', parameters=[{'people_file': people_file, 'use_sim_time': True}]),
     ]
 
 
@@ -95,6 +105,10 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('world', default_value='ziekenhuis_merged.sdf',
                               description='Wereldbestand in my_bot/worlds'),
+        DeclareLaunchArgument('people', default_value='false',
+                              description='Lopende paspoppen uit people_file (voor beendetectie)'),
+        DeclareLaunchArgument('people_file', default_value=os.path.join(
+            get_package_share_directory(package_name), 'config', 'people.yaml')),
         # Startpose per wereld; overschrijfbaar met x:= y:= yaw:=.
         *[DeclareLaunchArgument(arg, default_value=PythonExpression([
             "'", hospital, "' if '", LaunchConfiguration('world'), "'.startswith('hospital_aws') else '0.0'"]))

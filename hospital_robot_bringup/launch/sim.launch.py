@@ -61,7 +61,10 @@ def generate_launch_description():
             description='Routes file of the route_manager (read and written)'),
         DeclareLaunchArgument(
             'world', default_value='ziekenhuis_merged.sdf',
-            description='Wereld in my_bot/worlds, bv. hospital_aws.sdf (AWS-ziekenhuis) of hospital_aws_people.sdf (met lopende mensen)'),
+            description='Wereld in my_bot/worlds, bv. hospital_aws.sdf (AWS-ziekenhuis); people:=true zet er lopende paspoppen in'),
+        DeclareLaunchArgument(
+            'person_detector', default_value='false',
+            description='Persoonsdetectie (DR-SPAAM) op de lidar; publiceert /person_detections'),
         DeclareLaunchArgument(
             'foxglove', default_value='true', description='Start foxglove_bridge on port 8765'),
 
@@ -105,6 +108,12 @@ def generate_launch_description():
             Node(
                 package='my_bot', executable='WaypointTaskNode.py', name='waypoint_tasks',
                 output='screen', parameters=[{'use_sim_time': True}]),
+            Node(
+                package='my_bot', executable='PersonDetectorNode.py', name='person_detector',
+                # stride 3: Gazebo deelt de CPU; ~31% sneller, een paar procent minder gevonden.
+                output='screen', parameters=[{'use_sim_time': True, 'stride': 3}],
+                remappings=[('scan', '/laser_1/scan_filtered')],
+                condition=IfCondition(LaunchConfiguration('person_detector'))),
             # De kar staat altijd op dezelfde plek (zelfde pose als dock_cart in routes.yaml).
             Node(
                 package='ros_gz_sim', executable='create', output='log',

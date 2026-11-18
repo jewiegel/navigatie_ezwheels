@@ -1,0 +1,9 @@
+# Lopende paspoppen in de simulatie (launch-argument people:=true, WalkingPeopleNode).
+# Elke loper loopt heen en weer tussen start en eind (wereldcoördinaten, m), in een lus.
+# Kies routes vrij van muren en meubels, en laat routes elkaar niet kruisen (de benen botsen).
+speed: 1.0       # m/s
+turn_s: 0.6      # seconden om om te draaien aan het eind
+walkers:
+  loper_lobby_dwars: {start: [-3.5, 10.5], end: [2.2, 10.5]}   # 2 m voor de startplek van de robot
+  loper_lobby_oost: {start: [3.0, 5.5], end: [3.0, 13.5]}      # x=4.5 raakt de stoelen
+  loper_gang_liften: {start: [1.5, 12.5], end: [1.5, 16.6]}    # vanaf y=17 verhoogd liftplateau

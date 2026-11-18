@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- Been van een paspop (WalkingPeopleNode): onderbeen ~ enkel/scheen, zichtbaar voor de lidar.
+     velocity-control en odometry-publisher gebruiken de modelnaam: /model/<naam>/cmd_vel en /odometry. -->
+<sdf version="1.9">
+  <model name="paspop_been">
+    <link name="link">
+      <pose>0 0 0.41 0 0 0</pose>
+      <inertial><mass>5</mass><inertia><ixx>0.27</ixx><iyy>0.27</iyy><izz>0.009</izz></inertia></inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.06</radius><length>0.8</length></cylinder></geometry>
+        <surface><friction><ode><mu>0</mu><mu2>0</mu2></ode></friction><contact><collide_bitmask>0x02</collide_bitmask></contact></surface>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.06</radius><length>0.8</length></cylinder></geometry>
+        <material><diffuse>0.15 0.2 0.35 1</diffuse><ambient>0.15 0.2 0.35 1</ambient></material>
+      </visual>
+    </link>
+    <plugin filename="ignition-gazebo-velocity-control-system" name="ignition::gazebo::systems::VelocityControl"/>
+    <plugin filename="ignition-gazebo-odometry-publisher-system" name="ignition::gazebo::systems::OdometryPublisher">
+      <odom_publish_frequency>20</odom_publish_frequency>
+    </plugin>
+  </model>
+</sdf>
