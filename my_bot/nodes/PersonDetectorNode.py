@@ -49,6 +49,8 @@ class PersonDetectorNode(Node):
         checkpoint = self.declare_parameter('checkpoint', '/opt/dr_spaam/dr_spaam_e40.pth').value
         self.conf_thresh = self.declare_parameter('conf_thresh', 0.2).value
         stride = self.declare_parameter('stride', 2).value
+        # dr_spaam gebruikt np.int/np.bool, weg sinds NumPy 1.24 (EZ-Way-container heeft 1.26)
+        np.int, np.bool = getattr(np, 'int', int), getattr(np, 'bool', bool)
         from dr_spaam.detector import Detector   # zwaar (torch): pas laden als het node echt start
         self.detector = Detector('DR-SPAAM', checkpoint, gpu=False, stride=stride)
         self.detections_pub = self.create_publisher(PoseArray, 'person_detections', 10)

@@ -123,6 +123,8 @@ def generate_launch_description():
             # Alleen kijken: nog niets in Nav2 gebruikt /person_detections. Stride 2 (default).
             package='my_bot', executable='PersonDetectorNode.py', name='person_detector',
             output='screen', remappings=[('scan', '/laser_1/scan_filtered')],
+            # In ~/.local: de EZ-Way-container ziet van de host alleen /home/ezway
+            parameters=[{'checkpoint': '/home/ezway/.local/share/dr_spaam/dr_spaam_e40.pth'}],
             condition=IfCondition(LaunchConfiguration('person_detector'))),
         Node(
             package='foxglove_bridge', executable='foxglove_bridge', name='foxglove_bridge',
