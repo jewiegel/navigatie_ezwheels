@@ -69,8 +69,9 @@ def generate_launch_description():
                 'use_sim_time': 'true',
                 'slam_params_file': os.path.join(my_bot, 'config', 'mapper_params_explore.yaml'),
             }),
-            _include('hospital_robot_bringup', 'navigation.launch.py', {
-                'timing_file': LaunchConfiguration('timing_file'),
+            # Standaard Nav2-BT (met spin/backup en abort), niet de hospital-BT die nooit opgeeft.
+            _include('my_bot', 'navigation_launch.py', {
+                'params_file': os.path.join(my_bot, 'config', 'nav2_params.yaml'),
                 'use_sim_time': 'true',
             }),
             Node(
